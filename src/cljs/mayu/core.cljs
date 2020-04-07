@@ -5,8 +5,27 @@
    [reitit.frontend :as reitit]
    [clerk.core :as clerk]
    [accountant.core :as accountant]
-   [mayu.util :as u]))
+   [mayu.util :as u]
+   [mayu.frp :as frp]
+   ))
 
+(defn run-frp []
+  (let [e0 (frp/Event)
+        e1 (frp/fmap inc e0)
+        e2 (frp/filter odd? e0)]
+    (frp/consume! e0 #(println [:e0 %1]))
+    (frp/consume! e1 #(println [:e1 %1]))
+    (frp/consume! e2 #(println [:e2 %1]))
+    (frp/push! e0 0)
+    (frp/push! e0 1)
+    (frp/push! e0 2)
+    (frp/push! e0 3)
+    (frp/push! e0 4)
+    (frp/push! e0 5)
+    (frp/push! e0 6)
+    (frp/push! e0 7)
+    (frp/push! e0 8)
+    (frp/push! e0 9)))
 ;; -------------------------
 ;; Routes
 
@@ -30,6 +49,7 @@
   (fn []
     [:span.main
      [:h1 "Welcome to mayu"]
+     [:button {:on-click run-frp} "Test Me!"]
      [:ul
       [:li [:a {:href (path-for :items)} "Items of mayu"]]
       [:li [:a {:href "/broken/link"} "Broken link"]]]]))

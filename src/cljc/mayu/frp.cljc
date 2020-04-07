@@ -1,9 +1,96 @@
-(ns mayu.frp)
+(ns mayu.frp
+  (:require [allpa.core :as a
+             :refer [deftagged defn-match fn-match]]))
 
-(defrecord Event [id on-required a-state])
+; Actions
+(deftagged Push [info])
+(deftagged Sub [on])
+(deftagged Unsub [sub-id])
+(deftagged GetAncestry [])
 
-(def a-nextId (atom 1))
-(defn mk-event [on-required]
-  (let [id @a-nextId]
-    (swap! a-nextId inc)
-    (Event. id on-required (atom {}))))
+; Info
+(deftagged NewVal [val ancestry])
+(deftagged NewAncestry [ancestry])
+
+(defrecord RawEvent [send!])
+
+(defn-match event-on-action
+  [(Sub on)
+   ({:next-sub-id next-sub-id :subs subs :on-required on-required} :as state)
+   send!]
+  [(merge state
+          {:next-sub-id (inc next-sub-id)
+           :subs (merge subs {next-sub-id on})}
+          (if (empty? subs) {:off-callback (on-required (comp send! Push))} {}))
+   next-sub-id]
+
+  [(Unsub sub-id) ({:subs subs :off-callback off-callback} :as state) _]
+  [(do (when (= 1 (count subs))
+         (off-callback))
+       (assoc state :subs (dissoc sub-id subs)))]
+
+  [(Push :info ({:ancestry merge-ancestry} :as info))
+   ({:subs subs :ancestry ancestry :event-id event-id} :as state)
+   _]
+  [(let [updated (merge (update ancestry event-id inc) merge-ancestry)]
+     (doseq [[_ on] subs]
+       (on (assoc info :ancestry updated)))
+     (assoc state :ancestry updated))]
+
+  [(GetAncestry) ({:ancestry ancestry} :as state) _]
+  [state ancestry])
+
+(def a-next-event-id (atom 1))
+(defn Event
+  ([] (Event (fn [& args] (fn [& args])) {}))
+  ([on-required] (Event on-required {}))
+  ([on-required ancestry]
+   (let [event-id @a-next-event-id
+         a-state (atom {:ancestry (merge ancestry {event-id 0})
+                        :event-id event-id
+                        :next-sub-id 1
+                        :subs {}
+                        :on-required on-required})]
+     (swap! a-next-event-id inc)
+     (letfn [(send! [m]
+               (let [[state res] (event-on-action m @a-state send!)]
+                 (reset! a-state state)
+                 res)
+               )]
+       (->RawEvent send!)))))
+
+(defn ancestry! [{:keys [send!]}] (send! (GetAncestry)))
+
+(defn push! ([{:keys [send!]} v] (send! (Push (NewVal v {})))))
+
+(defn consume-raw! [{:keys [send!]} on]
+  (let [sub-id (send! (Sub on))]
+    (fn [] (send! (Unsub sub-id)))))
+
+(defn consume! [e on]
+  (consume-raw! e (fn-match [(NewVal val)] (on val)
+                            [_] nil)))
+
+(defn fmap [f e]
+  (let [init-ancestry (ancestry! e)]
+    (Event #(consume-raw! e (fn-match
+                             [(NewVal val ancestry)]
+                             (% (NewVal (f val) ancestry))
+
+                             [(NewAncestry ancestry)]
+                             (% (NewAncestry ancestry))
+                             ))
+     init-ancestry)))
+
+(defn filter [p e]
+  (let [init-ancestry (ancestry! e)]
+    (Event #(consume-raw! e (fn-match
+                             [(NewVal val ancestry)]
+                             (% ((if (p val)
+                                   (partial NewVal val)
+                                   NewAncestry)
+                                 ancestry))
+
+                             [(NewAncestry ancestry)]
+                             (% (NewAncestry ancestry))))
+           init-ancestry)))

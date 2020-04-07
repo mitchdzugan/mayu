@@ -5,6 +5,7 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
 
   :dependencies [[org.clojure/clojure "1.10.1"]
+                 [allpa "0.1.15"]
                  [wayra "0.0.5"]
                  [ring-server "0.5.0"]
                  [reagent "0.10.0"]

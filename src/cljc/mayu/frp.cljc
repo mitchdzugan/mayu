@@ -1,6 +1,10 @@
 (ns mayu.frp
   (:require [allpa.core :as a
-             :refer [deftagged defn-match fn-match]]))
+             :refer [deftagged defn-match fn-match match]]
+            [mayu.async
+             :refer [go timeout <!]]
+            [wayra.monoid
+             :refer [Monoid mappend maplus]]))
 
 ; Actions
 (deftagged Push [info])
@@ -12,7 +16,7 @@
 (deftagged NewVal [val ancestry])
 (deftagged NewAncestry [ancestry])
 
-(defrecord RawEvent [send!])
+(defrecord RawEvent [send! never?])
 
 (defn-match event-on-action
   [(Sub on)
@@ -35,6 +39,7 @@
   [(let [updated (merge (update ancestry event-id inc) merge-ancestry)]
      (doseq [[_ on] subs]
        (on (assoc info :ancestry updated)))
+     (println {:updated updated})
      (assoc state :ancestry updated))]
 
   [(GetAncestry) ({:ancestry ancestry} :as state) _]
@@ -57,7 +62,7 @@
                  (reset! a-state state)
                  res)
                )]
-       (->RawEvent send!)))))
+       (->RawEvent send! false)))))
 
 (defn ancestry! [{:keys [send!]}] (send! (GetAncestry)))
 
@@ -94,3 +99,48 @@
                              [(NewAncestry ancestry)]
                              (% (NewAncestry ancestry))))
            init-ancestry)))
+
+(defn reduce [r i e]
+  (let [a-agg (atom i)
+        init-ancestry (ancestry! e)]
+    (Event #(consume-raw! e (fn-match
+                             [(NewVal val ancestry)]
+                             (let [next (r @a-agg val)]
+                               (reset! a-agg next)
+                               (% (NewVal next ancestry)))
+
+                             [(NewAncestry ancestry)]
+                             (% (NewAncestry ancestry))
+                             ))
+           init-ancestry)))
+
+(defn defer [ms e]
+  (Event #(consume-raw! e (fn-match
+                           [(NewVal val ancestry)]
+                           (go (<! (timeout ms))
+                               (% (NewVal val ancestry)))
+
+                           [_] nil))))
+
+(defn once [val]
+  (Event #(go (<! (timeout 0))
+              (% (NewVal val {})))))
+
+(def never (->RawEvent (fn [_]) true))
+
+(defn join [& arg-events]
+  (match (vec (remove :never? arg-events))
+         [] never
+         [only] only
+         events
+         (let [a-ancestries (->> events
+                                 (map ancestry!)
+                                 vec
+                                 atom)])
+         (println "events")))
+
+(extend-protocol Monoid
+  RawEvent
+  (mappend [e1 e2] (join e1 e2))
+  (maplus [e1 e2] (join e1 e2)))
+

@@ -1,31 +1,60 @@
 (ns mayu.core
   (:require
    [reagent.core :as reagent :refer [atom]]
+   [reagent.dom :as rdom]
    [reagent.session :as session]
    [reitit.frontend :as reitit]
    [clerk.core :as clerk]
    [accountant.core :as accountant]
+   [wayra.core :as w
+    :refer [defnm defm mdo]]
    [mayu.util :as u]
    [mayu.frp :as frp]
+   [mayu.dom :as dom
+    :refer [text create-element env envs stash-dom apply-stash]]
+   [cljs.pprint :refer [pprint]]
    ))
+
+(defm ui
+  stashed <- (stash-dom (mdo (text "was")
+                             (text "out")
+                             (text "of")
+                             (text "order")))
+  (text "You")
+  (text "thought")
+  (text "this")
+  (apply-stash stashed)
+  (create-element "div" {} "Hello")
+  (create-element "div" "Hello")
+  (create-element "div")
+  (create-element "img" {:src "htpps://....png"})
+  )
 
 (defn run-frp []
   (let [e0 (frp/Event)
         e1 (frp/fmap inc e0)
-        e2 (frp/filter odd? e0)]
-    (frp/consume! e0 #(println [:e0 %1]))
-    (frp/consume! e1 #(println [:e1 %1]))
-    (frp/consume! e2 #(println [:e2 %1]))
-    (frp/push! e0 0)
-    (frp/push! e0 1)
-    (frp/push! e0 2)
-    (frp/push! e0 3)
-    (frp/push! e0 4)
-    (frp/push! e0 5)
-    (frp/push! e0 6)
-    (frp/push! e0 7)
-    (frp/push! e0 8)
-    (frp/push! e0 9)))
+        e2 (frp/filter odd? e1)
+        e3 (frp/reduce + 0 e2)
+        e4 (frp/defer 2000 e3)
+        ]
+    ; (frp/consume! e0 #(println [:e0 %1]))
+    ; (frp/consume! e1 #(println [:e1 %1]))
+    ; (frp/consume! e2 #(println [:e2 %1]))
+    ; (frp/consume! e3 #(println [:e3 %1]))
+    ; (frp/consume! e4 #(println [:e4 %1]))
+    ; (println (frp/join frp/never frp/never e1 e2))
+    ; (frp/push! e0 0)
+    ; (frp/push! e0 1)
+    ; (frp/push! e0 2)
+    ; (frp/push! e0 3)
+    ; (frp/push! e0 4)
+    ; (frp/push! e0 5)
+    ; (frp/push! e0 6)
+    ; (frp/push! e0 7)
+    ; (frp/push! e0 8)
+    ; (frp/push! e0 9)
+    (println js/snabbdom.init)
+    ))
 ;; -------------------------
 ;; Routes
 
@@ -47,6 +76,7 @@
 
 (defn home-page []
   (fn []
+    (dom/run {} ui #(pprint %1))
     [:span.main
      [:h1 "Welcome to mayu"]
      [:button {:on-click run-frp} "Test Me!"]
@@ -110,7 +140,7 @@
 ;; Initialize app
 
 (defn mount-root []
-  (reagent/render [current-page] (.getElementById js/document "app")))
+  (rdom/render [current-page] (.getElementById js/document "app")))
 
 (defn init! []
   (clerk/initialize!)

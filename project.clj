@@ -5,8 +5,10 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
 
   :dependencies [[org.clojure/clojure "1.10.1"]
-                 [allpa "0.1.15"]
-                 [wayra "0.0.5"]
+                 [allpa "0.1.18"]
+                 [wayra "0.0.11"]
+                 [org.clojure/core.async "1.1.587"]
+                 [net.cgrand/macrovich "0.2.1"]
                  [ring-server "0.5.0"]
                  [reagent "0.10.0"]
                  [reagent-utils "0.3.3"]
@@ -51,6 +53,7 @@
              {:output-to        "target/cljsbuild/public/js/app.js"
               :output-dir       "target/cljsbuild/public/js"
               :source-map       "target/cljsbuild/public/js/app.js.map"
+              :externs ["resources/externs/snabbdom.ext.js"]
               :optimizations :advanced
               :infer-externs true
               :pretty-print  false}}
@@ -59,6 +62,7 @@
              :figwheel {:on-jsload "mayu.core/mount-root"}
              :compiler
              {:main "mayu.dev"
+              :externs ["resources/externs/snabbdom.ext.js"]
               :asset-path "/js/out"
               :output-to "target/cljsbuild/public/js/app.js"
               :output-dir "target/cljsbuild/public/js/out"
@@ -90,13 +94,10 @@
                                   [prone "2020-01-17"]
                                   [figwheel-sidecar "0.5.19"]
                                   [nrepl "0.6.0"]
-                                  [pjstadig/humane-test-output "0.10.0"]
-                                  
- ]
+                                  [pjstadig/humane-test-output "0.10.0"]]
 
                    :source-paths ["env/dev/clj"]
-                   :plugins [[lein-figwheel "0.5.19"]
-]
+                   :plugins [[lein-figwheel "0.5.19"]]
 
                    :injections [(require 'pjstadig.humane-test-output)
                                 (pjstadig.humane-test-output/activate!)]

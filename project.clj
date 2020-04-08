@@ -5,8 +5,8 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
 
   :dependencies [[org.clojure/clojure "1.10.1"]
-                 [allpa "0.1.18"]
-                 [wayra "0.0.11"]
+                 [allpa "0.1.19"]
+                 [wayra "0.0.12"]
                  [org.clojure/core.async "1.1.587"]
                  [net.cgrand/macrovich "0.2.1"]
                  [ring-server "0.5.0"]
@@ -25,6 +25,7 @@
 
   :plugins [[lein-environ "1.1.0"]
             [lein-cljsbuild "1.1.7"]
+            [lein-ancient "0.6.15"]
             [lein-asset-minifier "0.4.6"
              :exclusions [org.clojure/clojure]]]
 
@@ -93,7 +94,7 @@
                                   [ring/ring-devel "1.8.0"]
                                   [prone "2020-01-17"]
                                   [figwheel-sidecar "0.5.19"]
-                                  [nrepl "0.6.0"]
+                                  [nrepl "0.7.0"]
                                   [pjstadig/humane-test-output "0.10.0"]]
 
                    :source-paths ["env/dev/clj"]

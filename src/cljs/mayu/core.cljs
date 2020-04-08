@@ -25,7 +25,7 @@
   (text "this")
   (apply-stash stashed)
   (create-element "div" {} "Hello")
-  (create-element "div" "Hello")
+  (create-element "div" "Hello!!!!")
   (create-element "div")
   (create-element "img" {:src "htpps://....png"})
   )

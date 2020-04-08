@@ -1,12 +1,18 @@
 (ns mayu.macros
   (:require [wayra.core :as w
-             :refer [mdo defnm fnm]])
+             :refer [mdo defnm fnm]]
+            [mayu.dom :as dom])
   #?(:cljs (:require-macros [mayu.macros :refer [ui defui]])))
 
 #?(:clj
    (defmacro ui [& body]
      (let [mk-args (fn [els]
-                     (let [split (partition-by #(or (= '$ %1)
+                     (let [[f & args] els
+                           f (if (get dom/tag-map (name f))
+                               `(partial mayu.dom/create-element ~(name f))
+                               f)
+                           els (concat [f] args)
+                           split (partition-by #(or (= '$ %1)
                                                     (= '= %1)
                                                     (= '$= %1))
                                                els)
@@ -23,8 +29,9 @@
                       (cond
                         (and (= '< curr)
                              (vector? scnd)
-                             (or (= '> thrd)
-                                 (= '> frth))) []
+                             #_(or (= '> thrd)
+                                 (= '> frth))
+                             ) []
                         (and (= '> curr)
                              (or (and (vector? prev)
                                       (= '< psnd))
@@ -35,10 +42,13 @@
                              (= '< psnd)) []
                         (and (vector? curr)
                              (= '< prev)
-                             (= '> scnd)) [`(~@(mk-args curr))]
+                             (= '> thrd)) [scnd '<- `(~@(mk-args curr))]
                         (and (vector? curr)
                              (= '< prev)
-                             (= '> thrd)) [scnd '<- `(~@(mk-args curr))]
+                             #_(= '> scnd)
+                             ) [`(~@(mk-args curr))]
+                        (or (= '> curr)
+                            (= '< curr)) (throw (Exception. "BAD!"))
                         :else [curr]))
                     (concat [nil nil nil] body)
                     (concat [nil nil] body)

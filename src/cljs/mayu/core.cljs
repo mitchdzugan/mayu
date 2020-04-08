@@ -9,7 +9,7 @@
    [wayra.core :as w
     :refer [defnm defm mdo]]
    [mayu.macros
-    :refer [defui ui]]
+    :refer [defui]]
    [mayu.util :as u]
    [mayu.frp :as frp]
    [mayu.dom :as dom
@@ -17,28 +17,22 @@
    [cljs.pprint :refer [pprint]]
    ))
 
-(def test-def
-  '(defui my-ui []
-     a <- (pure 1)
-     <[div {} "Hello"]>
-     <[button {} "Bye"] d_button >
-     (pure d_button))
-  )
-
-(defm ui
-  stashed <- (stash-dom (mdo (text "was")
-                             (text "out")
-                             (text "of")
-                             (text "order")))
-  (text "You")
-  (text "thought")
-  (text "this")
-  (apply-stash stashed)
-  (create-element "div" {} "Hello")
-  (create-element "div" "Hello!!!!")
-  (create-element "div")
-  (create-element "img" {:src "htpps://....png"})
-  )
+(defui my-ui []
+  (= 0 1) --> <[span "loading"]
+  <[stash-dom $=
+    <[text "was"]
+    <[text "out"]
+    <[text "of"]
+    <[text "order"]
+    ] stashed >
+  <[text "You"]
+  <[text "thought"]
+  <[text "this"]
+  <[apply-stash stashed]
+  <[div {} "Hello"]
+  <[div "Hello!!!"]
+  <[div]
+  <[img {:src "https://....png"}])
 
 (defn run-frp []
   (let [e0 (frp/Event)
@@ -86,7 +80,7 @@
 
 (defn home-page []
   (fn []
-    (dom/run {} ui #(pprint %1))
+    (dom/run {} (my-ui) #(pprint %1))
     [:span.main
      [:h1 "Welcome to mayu"]
      [:button {:on-click run-frp} "Test Me!"]

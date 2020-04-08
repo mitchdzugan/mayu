@@ -8,12 +8,22 @@
    [accountant.core :as accountant]
    [wayra.core :as w
     :refer [defnm defm mdo]]
+   [mayu.macros
+    :refer [defui ui]]
    [mayu.util :as u]
    [mayu.frp :as frp]
    [mayu.dom :as dom
     :refer [text create-element env envs stash-dom apply-stash]]
    [cljs.pprint :refer [pprint]]
    ))
+
+(def test-def
+  '(defui my-ui []
+     a <- (pure 1)
+     <[div {} "Hello"]>
+     <[button {} "Bye"] d_button >
+     (pure d_button))
+  )
 
 (defm ui
   stashed <- (stash-dom (mdo (text "was")

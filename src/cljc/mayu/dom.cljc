@@ -45,11 +45,11 @@
                      [{} arg])]
      (create-element tag attrs m)))
   ([tag attrs m-]
-   (let [m (if (string? m-) (text m-) m-)]
-     (w/pass (mdo res <- m
-                  [[res
-                    (curry update :mdom
-                           #(-> [(MCreateElement tag attrs %1)]))]])))))
+   let [m (if (string? m-) (text m-) m-)]
+   (w/pass (mdo res <- m
+                [[res
+                  (curry update :mdom
+                         #(-> [(MCreateElement tag attrs %1)]))]]))))
 
 (defnm emit [k e] (w/tell {:events {k e}}))
 

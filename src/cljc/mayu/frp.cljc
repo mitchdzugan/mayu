@@ -19,30 +19,25 @@
 (defrecord RawEvent [send! never?])
 
 (defn-match event-on-action
-  [(Sub on)
-   ({:next-sub-id next-sub-id :subs subs :on-required on-required} :as state)
-   send!]
+  [(Sub on) (__ next-sub-id subs on-required :as state) send!]
   [(merge state
           {:next-sub-id (inc next-sub-id)
            :subs (merge subs {next-sub-id on})}
           (if (empty? subs) {:off-callback (on-required (comp send! Push))} {}))
    next-sub-id]
 
-  [(Unsub sub-id) ({:subs subs :off-callback off-callback} :as state) _]
+  [(Unsub sub-id) (__ subs off-callback :as state) _]
   [(do (when (= 1 (count subs))
          (off-callback))
        (assoc state :subs (dissoc sub-id subs)))]
 
-  [(Push :info ({:ancestry merge-ancestry} :as info))
-   ({:subs subs :ancestry ancestry :event-id event-id} :as state)
-   _]
+  [(Push :info (__ :ancestry merge-ancestry :as info)) (__ subs ancestry event-id :as state) _]
   [(let [updated (merge (update ancestry event-id inc) merge-ancestry)]
      (doseq [[_ on] subs]
        (on (assoc info :ancestry updated)))
-     (println {:updated updated})
      (assoc state :ancestry updated))]
 
-  [(GetAncestry) ({:ancestry ancestry} :as state) _]
+  [(GetAncestry) (__ ancestry :as state) _]
   [state ancestry])
 
 (def a-next-event-id (atom 1))
@@ -83,8 +78,7 @@
                              (% (NewVal (f val) ancestry))
 
                              [(NewAncestry ancestry)]
-                             (% (NewAncestry ancestry))
-                             ))
+                             (% (NewAncestry ancestry))))
      init-ancestry)))
 
 (defn filter [p e]

@@ -32,6 +32,7 @@
 
 
 (defn mount-root []
+  (run-frp)
   (attach/attach "app" {} examples/my-ui))
 
 (defn init! []

@@ -28,10 +28,7 @@
           ~@(mapcat (fn [pthd psnd prev curr scnd thrd frth]
                       (cond
                         (and (= '< curr)
-                             (vector? scnd)
-                             #_(or (= '> thrd)
-                                 (= '> frth))
-                             ) []
+                             (vector? scnd)) []
                         (and (= '> curr)
                              (or (and (vector? prev)
                                       (= '< psnd))
@@ -44,11 +41,15 @@
                              (= '< prev)
                              (= '> thrd)) [scnd '<- `(~@(mk-args curr))]
                         (and (vector? curr)
-                             (= '< prev)
-                             #_(= '> scnd)
-                             ) [`(~@(mk-args curr))]
+                             (= '< prev)) [`(~@(mk-args curr))]
                         (or (= '> curr)
-                            (= '< curr)) (throw (Exception. "BAD!"))
+                            (= '< curr))
+                        (throw (Exception.
+                                (str "\"<\" and \">\" are assumed to be the "
+                                     "opening and closing of MDOM tags within "
+                                     "Mayu's UI macros. If you need to you can "
+                                     "use `mayu.util/lt` and `mayu.util/gt` "
+                                     "instead.")))
                         :else [curr]))
                     (concat [nil nil nil] body)
                     (concat [nil nil] body)

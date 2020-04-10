@@ -2,7 +2,7 @@
   (:require [allpa.core :as a
              :refer [curry deftagged defn-match fn-match match]]
             [mayu.async
-             :refer [go go-loop timeout <! chan >!]]
+             :refer [go go-loop timeout <! chan >! close!]]
             [wayra.monoid
              :refer [Monoid mappend maplus]]
             #?(:clj [clojure.pprint :refer [pprint]]
@@ -33,6 +33,7 @@
                         :ancestors ancestors
                         :pushes 1
                         :on? false
+                        :num-awaiting 0
                         :awaiting-on (chan)})))))
 
 (defn-match val?
@@ -44,29 +45,33 @@
     nil
     (let [{:keys [atom]} e
           {:keys [type val] merge-ancestors :ancestors} msg
-          {:keys [id pushes ancestors subs on? awaiting-on]} @atom
+          {:keys [id pushes ancestors subs on? num-awaiting awaiting-on]} @atom
           new-pushes (if (val? msg) (inc pushes) pushes)
           new-ancestors (merge ancestors merge-ancestors)]
       (if on?
-        (do
-          (when (contains? ancestors id)
-            (throw (a/Err "Resursive Event Encountered")))
-          (swap! atom (curry merge {:pushes new-pushes
-                                    :ancestors new-ancestors}))
-          (doseq [on (vals subs)]
-            (on (assoc-in msg [:ancestors id] new-pushes))))
-        (go (>! awaiting-on msg))))))
+        (do (when (contains? ancestors id)
+              (throw (a/Err "Resursive Event Encountered")))
+            (swap! atom (curry merge {:pushes new-pushes
+                                      :ancestors new-ancestors}))
+            (doseq [on (vals subs)]
+              (on (assoc-in msg [:ancestors id] new-pushes))))
+        (do (swap! atom #(update %1 :num-awaiting inc))
+            (go (>! awaiting-on {:msg msg :order num-awaiting})))))))
 
 (defn on! [e]
   (let [{:keys [atom]} e
-        {:keys [on? awaiting-on]} @atom]
+        {:keys [on? awaiting-on num-awaiting]} @atom]
     (when (not on?)
       (swap! atom (curry assoc :on? true))
-      (go-loop []
-        (let [msg (<! awaiting-on)]
-          (when msg
-            (send! e msg)
-            (recur)))))
+      (go-loop [left num-awaiting
+                msgs {}]
+        (if (> left 0)
+          (let [{:keys [msg order]} (<! awaiting-on)]
+            (recur (dec left) (assoc msgs order msg)))
+          (do
+            (close! awaiting-on)
+            (doseq [id (range (count msgs))]
+              (send! e (get msgs id)))))))
     e))
 
 (defn push! [e val] (send! e (Val val)))
@@ -102,6 +107,23 @@
 
                           [msg] (% msg)))
             (assoc ancestors id pushes))))))
+
+(defn e-reduce [r i e-src]
+  (if (never? e-src)
+    never
+    (let [a-acc (atom i)
+          {:keys [atom]} e-src
+          {:keys [id ancestors pushes]} @atom]
+      (on! (Event
+            #(subscribe! e-src
+                         (fn-match
+                          [(Val val :as msg)]
+                          (do (swap! a-acc (fn [acc] (r acc val)))
+                              (% (assoc msg :val @a-acc)))
+
+                          [msg] (% msg)))
+            (assoc ancestors id pushes))))))
+
 
 (defn filter [p e-src]
   (if (never? e-src)
@@ -204,6 +226,32 @@
   (->> (apply raw-join events)
        (filter (comp not :sent-sibling?))
        (fmap :val)))
+
+(defn preempt
+  ([f] (preempt identity f))
+  ([from-res f]
+   (let [e-channel (chan)
+         off-channel (chan)
+         e-init (Event (fn [send-self!]
+                         (go (let [e (<! e-channel)
+                                   {:keys [ancestors]} @(:atom e)
+                                   ; atom (:atom e-init)
+                                   off (subscribe! e send-self!)
+                                   ]
+                               (on! e)
+                               ; (swap! atom #(assoc %1 :ancestors ancestors))
+                               (>! off-channel off)))
+                         (fn [] (go ((<! off-channel))))))
+         res (f e-init)
+         e (from-res res)
+         atom-init (:atom e-init)
+         {:keys [ancestors]} @(:atom e)]
+     (swap! atom-init #(assoc %1 :ancestors ancestors))
+     (on! e-init)
+     (swap! (:atom e) #(merge %1 {:awaiting-on (chan)
+                                  :on? false}))
+     (go (>! e-channel e))
+     res)))
 
 (extend-protocol Monoid
   RawEvent

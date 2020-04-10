@@ -2,13 +2,13 @@
   (:require [mayu.macros
              :refer [defui]]
             [mayu.dom :as dom
-             :refer [text create-element env envs stash-dom apply-stash]]))
+             :refer [stash apply]]))
 
 
 (defui my-component [n]
   (= 0 n) --> <[span "loading"]
   <[ul $=
-    <[stash-dom $=
+    <[stash $=
       <[li "was"]
       <[li "out"]
       <[li "of"]
@@ -17,7 +17,7 @@
     <[li "You"]
     <[li "thought"]
     <[li "this"]
-    <[apply-stash stashed]]
+    <[apply stashed]]
   <[h3 "this is a header"]
   <[p "this is a test paragraph!!"]
   )

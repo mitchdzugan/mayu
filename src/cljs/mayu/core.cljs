@@ -1,34 +1,40 @@
 (ns mayu.core
   (:require [wayra.core :as w
              :refer [defnm defm mdo]]
-            [mayu.frp :as frp]
+            [mayu.frp.event :as frp]
             [mayu.attach :as attach]
             [mayu.examples :as examples]
-            [cljs.pprint :refer [pprint]]))
+            [cljs.pprint :refer [pprint]]
+            ))
+
+(defn logger [& args]
+  (fn [val]
+    (println (vec (concat [val] args)))))
 
 (defn run-frp []
-  (let [e0 (frp/Event)
-        e1 (frp/fmap inc e0)
-        e2 (frp/filter odd? e1)
-        e3 (frp/reduce + 0 e2)
-        e4 (frp/defer 2000 e3)
-        ]
-    (frp/consume! e0 #(println [:e0 %1]))
-    (frp/consume! e1 #(println [:e1 %1]))
-    (frp/consume! e2 #(println [:e2 %1]))
-    (frp/consume! e3 #(println [:e3 %1]))
-    (frp/consume! e4 #(println [:e4 %1]))
-    (println (frp/join frp/never frp/never e1 e2))
-    (frp/push! e0 0)
-    (frp/push! e0 1)
-    (frp/push! e0 2)
-    (frp/push! e0 3)
-    (frp/push! e0 4)
-    (frp/push! e0 5)
-    (frp/push! e0 6)
-    (frp/push! e0 7)
-    (frp/push! e0 8)
-    (frp/push! e0 9)))
+  (let [
+        e1 (frp/Event)
+        _ (frp/on! e1)
+        e2 (->> e1
+                (frp/filter #(< %1 6))
+                (frp/fmap #(-> [%1 :e2])))
+        e3 (->> e1
+                (frp/filter #(< %1 5))
+                (frp/fmap #(-> [%1 :e3])))
+        e4 (->> e1
+                (frp/filter #(< %1 3))
+                (frp/fmap #(-> [%1 :e4])))
+        e5 (frp/join-skip-siblings e2 e3 e4)
+        off (frp/consume! e5 (logger :e5))
+        _ (frp/push! e1 1)
+        _ (frp/push! e1 2)
+        _ (frp/push! e1 3)
+        _ (frp/push! e1 4)
+        _ (frp/push! e1 5)
+        _ (frp/push! e1 6)
+        _ (frp/push! e1 0)
+        _ (off)
+        ]))
 
 
 (defn mount-root []

@@ -71,12 +71,12 @@
 ;; TODO need use/collect/signals implemented
 (defnm collect-and-reduce [])
 
-(defnm stash-dom [m]
+(defnm stash [m]
   (w/pass (mdo [res, w] <- (w/listen m)
                [[{:res res :mdom (:mdom w)}
                  (curry assoc :mdom [])]])))
 
-(defnm apply-stash [{:keys [mdom]}] (w/eachm mdom #(w/tell {:mdom %1})))
+(defnm apply [{:keys [mdom]}] (w/eachm mdom #(w/tell {:mdom %1})))
 
 (defn run [env m use-mdom]
   (->> m

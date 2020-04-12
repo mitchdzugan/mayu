@@ -13,8 +13,26 @@
 
 (defn run-frp []
   #_(let [e (frp/timer 1000)]
-    (frp/consume! e (logger :time)))
-  (let [e1 (frp/Event)
+      (frp/consume! e (logger :time)))
+  #_(let [e1 (frp/on! (frp/Event))
+        e2 (frp/on! (frp/Event))
+        e3 (frp/on! (frp/Event))
+        e4 (frp/flat-map #(if (odd? %1) e3 e2) e1)]
+    (frp/consume! e4 (logger :e4))
+    (frp/push! e1 1)
+    (frp/push! e3 [:e3 1])
+    (frp/push! e3 [:e3 2])
+    (frp/push! e3 [:e3 3])
+    (frp/push! e2 [:e2 1])
+    (frp/push! e2 [:e2 2])
+    (frp/push! e2 [:e2 3])
+    (frp/push! e1 2)
+    (frp/push! e3 [:e3 4])
+    (frp/push! e3 [:e3 5])
+    (frp/push! e2 [:e2 4])
+    (frp/push! e2 [:e2 5])
+    )
+  #_(let [e1 (frp/Event)
         _ (frp/on! e1)
         e2 (->> e1
                 (frp/filter #(< %1 6))

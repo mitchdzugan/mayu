@@ -100,11 +100,11 @@
 ;; TODO unsure of implementation details
 (defnm memo [])
 
+(defnm key [k] (w/modify #(merge %1 {:key k})))
+
 (defnm keyed [k m]
-  (w/modify #(merge %1 {:key k}))
-  res <- m
-  (w/modify #(merge %1 {:key nil}))
-  [res])
+  (key k)
+  m)
 
 ;; TODO need use/collect/signals implemented
 (defnm collect-and-reduce [])

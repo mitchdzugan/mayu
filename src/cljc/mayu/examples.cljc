@@ -11,7 +11,8 @@
     <[dom/stash $=
       <[li "was"]
       <[li "out"]
-      <[dom/keyed "TEST" $= <[li "of"]]
+      (dom/key "Test")
+      <[li "of"]
       <[li "order"]
       ] stashed >
     <[li {:class "aclass"} "You!"]

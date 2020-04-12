@@ -160,7 +160,7 @@
             (assoc ancestors id pushes))))))
 
 (defn to-ancestors [ancestor-data]
-  (a/map-values #(apply min (-> %1 :counts vals))
+  (a/map-values (fn [id-data _] (apply min (-> id-data :counts vals)))
                 @ancestor-data))
 
 (defn process-message [ancestor-data send-self! e-src]
@@ -192,12 +192,12 @@
             (do (swap! awaiting inc)
                 (when (val? msg)
                   (swap! ancestor-data (curry update-in [anc-id :stashed]
-                                              #(conj %1 dec-awaiting)))))
+                                              #(conj %1 {:dec dec-awaiting
+                                                         :id id})))))
             (< (get prev anc-id) count)
-            (do (core/reduce #(%2 %1) (val? msg)
+            (do (core/reduce #((:dec %2) %1) (val? msg)
                              (get-in @ancestor-data [anc-id :stashed]))
-                (swap! ancestor-data #(assoc-in %1 [anc-id :stashed]
-                                                '()))))))
+                (swap! ancestor-data #(assoc-in %1 [anc-id :stashed] '()))))))
       (dec-awaiting false))))
 
 
@@ -279,13 +279,65 @@
                            (recur))))
                      (fn [] (go (>! c :off))))))))
 
-(defn flat-map [f e]
-  (let [curr-off (atom (fn []))
-        full-off (atom (fn []))
-        {:keys [atom]} e
-        {:keys [id ancestors pushes]} @atom]
-    (on! (Event
-          (assoc ancestors id pushes)))))
+(defn raw-flat-map [f e]
+  (if (never? e)
+    never
+    (let [curr-off (atom (fn []))
+          full-off (atom (fn []))
+          curr-id (atom nil)
+          {:keys [id ancestors pushes]} @(:atom e)
+          init-ancestor-data (reduce-kv
+                              (fn [data anc-id pushes]
+                                (assoc-in data [anc-id :counts id] pushes))
+                              {}
+                              (assoc ancestors id pushes))
+          ancestor-data (atom init-ancestor-data)
+
+          process-val
+          (fn [send-self! {:keys [val] :as msg}]
+            (let [e-next (f val)
+                  next @(:atom e-next)
+                  next-id (:id next)]
+              (doseq [[anc-id data] @ancestor-data]
+                (swap! ancestor-data (fn [curr-data]
+                                       (-> curr-data
+                                           (update-in [anc-id :stashed]
+                                                      (partial remove
+                                                               #(= @curr-id
+                                                                   (:id %1))))
+                                           (update-in [anc-id :counts]
+                                                      #(dissoc %1 @curr-id))))))
+              (doseq [[anc-id pushes] (:ancestors next)]
+                (swap! ancestor-data #(assoc-in %1 [anc-id :counts next-id] pushes)))
+              (reset! curr-id next-id)
+              (@curr-off)
+              ((process-message ancestor-data send-self! e)
+               (Ancestors (:ancestors msg)))
+              (reset! curr-off
+                      (subscribe! e-next
+                                  (process-message ancestor-data
+                                                   send-self!
+                                                   e-next)))))]
+      (on! (Event
+            (fn [send-self!]
+              (reset! full-off
+                      (subscribe! e
+                                  (fn-match
+                                   [(Val :as msg)]
+                                   (process-val send-self! msg)
+
+                                   [msg]
+                                   ((process-message ancestor-data
+                                                     send-self!
+                                                     e) msg))))
+              (fn []
+                (@curr-off)
+                (@full-off)
+                (reset! curr-off (fn []))
+                (reset! full-off (fn []))))
+            (assoc ancestors id pushes))))))
+
+(defn flat-map [f e] (fmap :val (raw-flat-map f e)))
 
 (defn flatten [ee] (flat-map identity ee))
 

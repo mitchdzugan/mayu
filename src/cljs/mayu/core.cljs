@@ -12,6 +12,8 @@
     (println (vec (concat [val] args)))))
 
 (defn run-frp []
+  #_(let [e (frp/timer 1000)]
+    (frp/consume! e (logger :time)))
   (let [e1 (frp/Event)
         _ (frp/on! e1)
         e2 (->> e1
@@ -34,10 +36,31 @@
         _ (frp/push! e1 0)
         _ (off)
         ])
-  (let [e1 (frp/Event)
+  #_(let [e1 (frp/Event)
+        _ (frp/on! e1)
+        e2 (->> e1
+                (frp/filter #(> %1 2))
+                (frp/fmap #(-> [%1 :e2])))
+        e3 (->> e1
+                (frp/filter #(> %1 2))
+                (frp/fmap #(-> [%1 :e3])))
+        e4 (frp/join e2 e3)
+        off (frp/subscribe! e4 #(if (frp/val? %1) nil (println (:ancestors %1))))
+        #_(frp/consume! e4 (logger :e4))
+        _ (frp/push! e1 1)
+        _ (frp/push! e1 2)
+        _ (frp/push! e1 2)
+        _ (frp/push! e1 2)
+        _ (frp/push! e1 2)
+        _ (frp/push! e1 2)
+        _ (frp/push! e1 2)
+        _ (frp/push! e1 3)
+        _ (off)
+        ])
+  #_(let [e1 (frp/Event)
         _ (pprint [:e1 e1])
         _ (frp/on! e1)
-        e2 (frp/e-reduce #(+ %1 %2) 0 e1)
+        e2 (frp/reduce #(+ %1 %2) 20 e1)
         off (frp/consume! e2 (logger :e2))
         _ (frp/push! e1 1)
         _ (frp/push! e1 2)

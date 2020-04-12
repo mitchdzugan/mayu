@@ -1,6 +1,7 @@
 (ns mayu.dom
   (:require [allpa.core
              :refer [curry]]
+            [mayu.frp.event :as e]
             [mayu.mdom
              :refer [MText MCreateElement MBind]]
             [wayra.core :as w
@@ -37,6 +38,37 @@
 
 (defnm text [s] (w/tell {:mdom (MText s)}))
 
+(defm curr-path
+  {:keys [path last-unique-step]} <- w/ask
+  [(conj path last-unique-step)])
+
+(defm curr-unique-path
+  {:keys [unique-path last-unique-step]} <- w/ask
+  [(conj unique-path last-unique-step)])
+
+(defnm step [label m]
+  {:keys [key label-counts]} <- w/get
+  {:keys [path unique-path last-step last-unique-step]} <- w/ask
+  let [full-label (str label "." key)
+       label-count (get label-counts full-label 0)
+       full-unique-label (str full-label "." label-count)]
+  (w/modify #(merge %1 {:key nil :label-counts {}}))
+  res <- (w/local (comp #(update %1 :path (curry conj last-step))
+                        #(update %1 :unique-path (curry conj last-unique-step))
+                        #(assoc %1 :last-step full-label)
+                        #(assoc %1 :last-unique-step full-unique-label))
+                  m)
+  (w/modify #(merge %1 {:key nil :label-counts (assoc label-counts
+                                                      full-label
+                                                      (inc label-count))}))
+  [res])
+
+(defnm inner-create-element [key tag attrs m]
+  path <- curr-unique-path
+  ; [(println [:path path])]
+  res <- m
+  [[res (curry update :mdom #(-> [(MCreateElement tag key path attrs %1)]))]])
+
 (defnm create-element
   ([tag] (create-element tag {} (w/pure nil)))
   ([tag arg]
@@ -46,18 +78,21 @@
      (create-element tag attrs m)))
   ([tag attrs m-]
    let [m (if (string? m-) (text m-) m-)]
-   (w/pass (mdo res <- m
-                [[res
-                  (curry update :mdom
-                         #(-> [(MCreateElement tag attrs %1)]))]]))))
+   {:keys [key]} <- w/get
+   (w/pass (step tag (inner-create-element key tag attrs m)))))
 
 (defnm emit [k e] (w/tell {:events {k e}}))
 
-;; TODO need preempt implemented
-(defnm collect [])
+(defnm collect [k mf]
+  (w/pass #(assoc-in %1 [:events k] e/never)
+          (mdo {:keys [res]} <- (w/preemptm e/preempt :e
+                                            #(mdo [res w] <- (w/listen (mf %1))
+                                                  let [e (get-in w [:events k])]
+                                                  [{:res res :e e}]))
+               [[res (curry update :events #(dissoc %1 k))]])))
 
 ;; TODO need frp/signals implemented
-(defnm use [])
+(defnm s-use [])
 
 ;; TODO need frp/signals implemented
 (defnm bind [])
@@ -65,23 +100,29 @@
 ;; TODO unsure of implementation details
 (defnm memo [])
 
-;; TODO unsure of implementation details
-(defnm keyed [])
+(defnm keyed [k m]
+  (w/modify #(merge %1 {:key k}))
+  res <- m
+  (w/modify #(merge %1 {:key nil}))
+  [res])
 
 ;; TODO need use/collect/signals implemented
 (defnm collect-and-reduce [])
 
 (defnm stash [m]
-  (w/pass (mdo [res, w] <- (w/listen m)
+  (w/pass (mdo [res w] <- (w/listen m)
                [[{:res res :mdom (:mdom w)}
                  (curry assoc :mdom [])]])))
 
-(defnm apply [{:keys [mdom]}] (w/eachm mdom #(w/tell {:mdom %1})))
+(defnm unstash [{:keys [mdom]}] (w/eachm mdom #(w/tell {:mdom %1})))
 
-(defn run [env m use-mdom]
+(defn run [e-el env m use-mdom]
   (->> m
-       (w/exec {:reader {:env env}
-                :init-writer {:mdom []}})
+       (w/exec {:reader {:e-el e-el
+                         :env env
+                         :last-step ::root
+                         :last-unique-step ::root}
+                :init-writer {:mdom [] :events {}}})
        :writer
        :mdom
        use-mdom))

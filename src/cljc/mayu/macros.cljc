@@ -21,7 +21,7 @@
                          (= 3 scount) (concat (nth split 0)
                                               [`(ui ~@(nth split 2))])
                          (= 5 scount) (concat (nth split 0)
-                                              [`(fn ~(nth split 2)
+                                              [`(fn ~(first (nth split 2))
                                                   (ui ~@(nth split 4)))])
                          :else els)))]
        `(mdo

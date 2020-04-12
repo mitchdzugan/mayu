@@ -3,7 +3,7 @@
              :refer [deftagged]]))
 
 (deftagged MText [s])
-(deftagged MCreateElement [tag attrs children])
+(deftagged MCreateElement [tag key path attrs children])
 (deftagged MBind [a-bind])
 
 

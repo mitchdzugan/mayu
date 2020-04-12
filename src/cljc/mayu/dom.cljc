@@ -2,8 +2,10 @@
   (:require [allpa.core
              :refer [curry]]
             [mayu.frp.event :as e]
+            [mayu.frp.signal :as s]
             [mayu.mdom
              :refer [MText MCreateElement MBind]]
+            [wayra.impl :as wimpl]
             [wayra.core :as w
              :refer [defnm defm mdo]]))
 
@@ -36,7 +38,7 @@
 
 (defnm update-in-env [ks f m] (w/local #(update-in %1 (concat [:env] ks) f) m))
 
-(defnm text [s] (w/tell {:mdom (MText s)}))
+(defnm text [& s] (w/tell {:mdom (MText (apply str s))}))
 
 (defm curr-path
   {:keys [path last-unique-step]} <- w/ask
@@ -74,7 +76,7 @@
        (fn [target]
          (->> e-el
               (e/filter #(= (:path %1) path))
-              (e/fmap :el)
+              (e/map :el)
               e/shadow
               (e/flat-map
                (fn [el]
@@ -120,17 +122,24 @@
 ;; TODO need frp/signals implemented
 (defnm s-use [])
 
+(def log #?(:clj println :cljs #(.log js/console %1)))
+
 ;; TODO need frp/signals implemented
-(defnm bind [])
+(defnm bind [s f]
+  (step "bind"
+   (mdo
+    {:keys [init-writer reader state]} <- wimpl/raw-get
+    let [{:keys [signal]}
+         (s/build (s/map #(w/exec {:init-writer (w/mempty init-writer)
+                                   :reader reader}
+                                  (f %1))
+                         s))]
+    [(s/consume! signal #(log (-> %1 :writer :mdom)))])))
 
 ;; TODO unsure of implementation details
 (defnm memo [])
 
-(defnm key [k] (w/modify #(merge %1 {:key k})))
-
-(defnm keyed [k m]
-  (key k)
-  m)
+(defnm keyed [k] (w/modify #(merge %1 {:key k})))
 
 ;; TODO need use/collect/signals implemented
 (defnm collect-and-reduce [])

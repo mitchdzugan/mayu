@@ -2,6 +2,7 @@
   (:require [wayra.core :as w
              :refer [defnm defm mdo]]
             [mayu.frp.event :as frp]
+            [mayu.frp.signal :as s]
             [mayu.attach :as attach]
             [mayu.examples :as examples]
             [cljs.pprint :refer [pprint]]
@@ -12,6 +13,18 @@
     (println (vec (concat [val] args)))))
 
 (defn run-frp []
+  #_(let [e (frp/reduce inc 0 (frp/timer 1000))
+        {s :signal} (s/build (s/from 0 e))]
+    (frp/push! e 0)
+    (frp/push! e 0)
+    (frp/push! e 0)
+    (frp/push! e 0)
+    (frp/push! e 0)
+    (frp/push! e 0)
+    (frp/push! e 0)
+    (frp/push! e 0)
+    (frp/push! e 0)
+    (s/consume! s (logger :s)))
   #_(let [e (frp/defer-off (frp/Event (fn [_]
                                       (println "ON")
                                       (fn [] (println "OFF")))))
@@ -49,13 +62,13 @@
         _ (frp/on! e1)
         e2 (->> e1
                 (frp/filter #(< %1 6))
-                (frp/fmap #(-> [%1 :e2])))
+                (frp/map #(-> [%1 :e2])))
         e3 (->> e1
                 (frp/filter #(< %1 5))
-                (frp/fmap #(-> [%1 :e3])))
+                (frp/map #(-> [%1 :e3])))
         e4 (->> e1
                 (frp/filter #(< %1 3))
-                (frp/fmap #(-> [%1 :e4])))
+                (frp/map #(-> [%1 :e4])))
         e5 (frp/join-skip-siblings e2 e3 e4)
         off (frp/consume! e5 (logger :e5))
         _ (frp/push! e1 1)
@@ -71,10 +84,10 @@
         _ (frp/on! e1)
         e2 (->> e1
                 (frp/filter #(> %1 2))
-                (frp/fmap #(-> [%1 :e2])))
+                (frp/map #(-> [%1 :e2])))
         e3 (->> e1
                 (frp/filter #(> %1 2))
-                (frp/fmap #(-> [%1 :e3])))
+                (frp/map #(-> [%1 :e3])))
         e4 (frp/join e2 e3)
         off (frp/subscribe! e4 #(if (frp/val? %1) nil (println (:ancestors %1))))
         #_(frp/consume! e4 (logger :e4))
@@ -102,7 +115,7 @@
         _ (frp/push! e1 0)
         _ (off)
         ])
-  #_(let [e (frp/preempt #(frp/fmap inc %1))]
+  #_(let [e (frp/preempt #(frp/map inc %1))]
     (frp/consume! e (logger :e-preempt))
     (frp/push! e 1)
     (frp/push! e 2)))

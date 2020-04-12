@@ -111,7 +111,7 @@
 
                         [_] nil))))))
 
-(defn fmap [f e-src]
+(defn map [f e-src]
   (if (never? e-src)
     never
     (let [{:keys [atom]} e-src
@@ -233,15 +233,15 @@
 
     (match events
            [] never
-           [event] (fmap #(-> {:val %1 :sent-sibling? false}) event)
+           [event] (map #(-> {:val %1 :sent-sibling? false}) event)
            events (perform-join events))))
 
-(defn join [& events] (fmap :val (apply raw-join events)))
+(defn join [& events] (map :val (apply raw-join events)))
 
 (defn join-skip-siblings [& events]
   (->> (apply raw-join events)
        (filter (comp not :sent-sibling?))
-       (fmap :val)))
+       (map :val)))
 
 (defn preempt
   ([f] (preempt identity f))
@@ -338,28 +338,30 @@
                 (reset! full-off (fn []))))
             (assoc ancestors id pushes))))))
 
-(defn flat-map [f e] (fmap :val (raw-flat-map f e)))
+(defn flat-map [f e] (map :val (raw-flat-map f e)))
 
 (defn flatten [ee] (flat-map identity ee))
 
 (defn defer-off
   ([e] (defer-off e 0))
   ([e ms]
-   (let [soft-on? (atom false)
-         on? (atom false)
-         off-fn (atom (fn []))]
-     (on! (Event (fn [send-self!]
-                   (reset! soft-on? true)
-                   (when (not @on?)
-                     (reset! off-fn (subscribe! e send-self!))
-                     (reset! on? true))
-                   (fn []
-                     (reset! soft-on? false)
-                     (go (<! (timeout ms))
-                         (when (not @soft-on?)
-                           (reset! on? false)
-                           (@off-fn)
-                           (reset! off-fn (fn [])))))))))))
+   (if (never? e)
+     never
+     (let [soft-on? (atom false)
+           on? (atom false)
+           off-fn (atom (fn []))]
+       (on! (Event (fn [send-self!]
+                     (reset! soft-on? true)
+                     (when (not @on?)
+                       (reset! off-fn (subscribe! e send-self!))
+                       (reset! on? true))
+                     (fn []
+                       (reset! soft-on? false)
+                       (go (<! (timeout ms))
+                           (when (not @soft-on?)
+                             (reset! on? false)
+                             (@off-fn)
+                             (reset! off-fn (fn []))))))))))))
 
 (extend-protocol Monoid
   RawEvent

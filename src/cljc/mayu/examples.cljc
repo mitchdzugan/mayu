@@ -2,6 +2,7 @@
   (:require [mayu.macros
              :refer [defui ui]]
             [mayu.frp.event :as e]
+            [mayu.frp.signal :as s]
             [mayu.dom :as dom]))
 
 
@@ -11,7 +12,7 @@
     <[dom/stash $=
       <[li "was"]
       <[li "out"]
-      (dom/key "Test")
+      (dom/keyed "Test")
       <[li "of"]
       <[li "order"]
       ] stashed >
@@ -26,16 +27,15 @@
 (defui my-ui []
   <[button "Test"] d-button >
   [(e/consume! (dom/on-click d-button) println)]
-  let [e1 (e/fmap (fn [_] :e1) (e/timer 1200))
-       e2 (e/fmap (fn [_] :e2) (e/timer 800))]
+  let [e (e/reduce inc 0 (e/timer 1000))
+       {s :signal} (s/build (s/from 0 e))]
   <[h2 "<[my-component 0]"]
   <[my-component 0]
   <[h2 "<[my-component 1]"]
   <[my-component 1]
   <[dom/collect ::test $[e]=
-    ; [(e/consume! e #(println [:collected %1]))]
-    (dom/emit ::test e1)
-    (dom/emit ::test e2)
+    <[dom/bind s $[v]=
+      (dom/text v)]
     <[div "in collector"]
     ]
   )

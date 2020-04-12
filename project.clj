@@ -6,7 +6,7 @@
 
   :dependencies [[org.clojure/clojure "1.10.1"]
                  [allpa "0.1.22"]
-                 [wayra "0.0.15"]
+                 [wayra "0.0.16"]
                  [org.clojure/core.async "1.1.587"]
                  [net.cgrand/macrovich "0.2.1"]
                  [cljsjs/snabbdom "0.7.4-0"]

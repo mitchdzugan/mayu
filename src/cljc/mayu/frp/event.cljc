@@ -161,12 +161,11 @@
 
 (defn to-ancestors [ancestor-data]
   (a/map-values #(apply min (-> %1 :counts vals))
-                @ancestor-data)
-  )
+                @ancestor-data))
 
 (defn process-message [ancestor-data send-self! e-src]
   (fn [msg]
-    (let [{:keys [id]} (:atom e-src)
+    (let [{:keys [id]} @(:atom e-src)
           {:keys [type val ancestors]} msg
           awaiting (atom 1)
 
@@ -176,16 +175,16 @@
             (if (= 0 @awaiting)
               (do
                 (send-self! (-> msg
-                                (assoc :ancestors (to-ancestors))
+                                (assoc :ancestors (to-ancestors ancestor-data))
                                 (assoc :val {:sent-sibling? sent-sibling?
                                              :val val})))
                 (or sent-sibling? (val? msg)))
               sent-sibling?))
 
-          prev (to-ancestors)]
+          prev (to-ancestors ancestor-data)]
       (doseq [[anc-id count] ancestors]
         (swap! ancestor-data #(assoc-in %1 [anc-id :counts id] count)))
-      (let [curr (to-ancestors)]
+      (let [curr (to-ancestors ancestor-data)]
         (doseq [[anc-id count] ancestors]
           (cond
             (and (< (get prev anc-id) count)
@@ -205,55 +204,13 @@
 (defn raw-join [& arg-events]
   (let [events (remove never? arg-events)
 
-        event-on
-        (fn [ancestor-data to-ancestors send-self! {:keys [id]} msg]
-          (let [{:keys [type val ancestors]} msg
-                awaiting (atom 1)
-
-                dec-awaiting
-                (fn [sent-sibling?]
-                  (swap! awaiting dec)
-                  (if (= 0 @awaiting)
-                    (do
-                      (send-self! (-> msg
-                                      (assoc :ancestors (to-ancestors))
-                                      (assoc :val {:sent-sibling? sent-sibling?
-                                                   :val val})))
-                      (or sent-sibling? (val? msg)))
-                    sent-sibling?))
-
-                prev (to-ancestors)]
-            (doseq [[anc-id count] ancestors]
-              (swap! ancestor-data #(assoc-in %1 [anc-id :counts id] count)))
-            (let [curr (to-ancestors)]
-              (doseq [[anc-id count] ancestors]
-                (cond
-                  (and (< (get prev anc-id) count)
-                       (< (get curr anc-id) count))
-                  (do (swap! awaiting inc)
-                      (when (val? msg)
-                        (swap! ancestor-data (curry update-in [anc-id :stashed]
-                                                    #(conj %1 dec-awaiting)))))
-                  (< (get prev anc-id) count)
-                  (do (core/reduce #(%2 %1) (val? msg)
-                                   (get-in @ancestor-data [anc-id :stashed]))
-                      (swap! ancestor-data #(assoc-in %1 [anc-id :stashed]
-                                                      '()))))))
-            (dec-awaiting false))
-          )
-
         on-required
-        (fn [events ancestor-data to-ancestors send-self!]
-          (let [offs
-                (->> events
-                     (core/map (fn [event]
-                                 (subscribe! event
-                                             #(event-on ancestor-data
-                                                        to-ancestors
-                                                        send-self!
-                                                        @(:atom event)
-                                                        %1))))
-                     vec)]
+        (fn [events ancestor-data send-self!]
+          (let [offs (-> #(subscribe! %1 (process-message ancestor-data
+                                                          send-self!
+                                                          %1))
+                         (core/map events)
+                         vec)]
             (fn [] (doseq [off offs] (off)))))
 
         perform-join
@@ -270,13 +227,9 @@
                       (assoc ancestors id pushes))))
                  {}
                  events)
-                ancestor-data (atom init-ancestor-data)
-                to-ancestors (fn []
-                               (a/map-values #(apply min (-> %1 :counts vals))
-                                             @ancestor-data)
-                               )]
-            (on! (Event #(on-required events ancestor-data to-ancestors %1)
-                        (to-ancestors)))))]
+                ancestor-data (atom init-ancestor-data)]
+            (on! (Event #(on-required events ancestor-data %1)
+                        (to-ancestors ancestor-data)))))]
 
     (match events
            [] never

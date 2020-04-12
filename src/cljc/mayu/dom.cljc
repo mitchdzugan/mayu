@@ -63,11 +63,37 @@
                                                       (inc label-count))}))
   [res])
 
+(defn on-click [{:keys [make-event-from-target]}]
+  (make-event-from-target "click"))
+
 (defnm inner-create-element [key tag attrs m]
   path <- curr-unique-path
-  ; [(println [:path path])]
   res <- m
-  [[res (curry update :mdom #(-> [(MCreateElement tag key path attrs %1)]))]])
+  {:keys [e-el]} <- w/ask
+  let [make-event-from-target
+       (fn [target]
+         (->> e-el
+              (e/filter #(= (:path %1) path))
+              (e/fmap :el)
+              e/shadow
+              (e/flat-map
+               (fn [el]
+                 (let [existing (aget el "__mayu_events")]
+                   (if (get existing target)
+                     (get existing target)
+                     (let [res
+                           (-> #(let [handler (fn [dom-event]
+                                                (%1 (e/Val dom-event)))]
+                                  (.addEventListener el target handler)
+                                  (fn []
+                                    (.removeEventListener el target handler)))
+                               e/Event
+                               e/on!
+                               e/defer-off)]
+                       (aset el "__mayu_events" (assoc existing target res))
+                       res)))))))]
+  [[{:res res :make-event-from-target make-event-from-target}
+    (curry update :mdom #(-> [(MCreateElement tag key path attrs %1)]))]])
 
 (defnm create-element
   ([tag] (create-element tag {} (w/pure nil)))

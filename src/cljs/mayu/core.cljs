@@ -12,6 +12,19 @@
     (println (vec (concat [val] args)))))
 
 (defn run-frp []
+  #_(let [e (frp/defer-off (frp/Event (fn [_]
+                                      (println "ON")
+                                      (fn [] (println "OFF")))))
+        _ (frp/push! e 1)
+        off1 (frp/consume! e (logger :e1))
+        _ (frp/push! e 2)
+        _ (off1)
+        _ (frp/push! e 3)
+        off2 (frp/consume! e (logger :e2))
+        _ (frp/push! e 4)
+        _ (off2)
+        _ (frp/push! e 5)
+        ])
   #_(let [e (frp/timer 1000)]
       (frp/consume! e (logger :time)))
   #_(let [e1 (frp/on! (frp/Event))

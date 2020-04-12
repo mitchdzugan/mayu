@@ -24,6 +24,8 @@
   )
 
 (defui my-ui []
+  <[button "Test"] d-button >
+  [(e/consume! (dom/on-click d-button) println)]
   let [e1 (e/fmap (fn [_] :e1) (e/timer 1200))
        e2 (e/fmap (fn [_] :e2) (e/timer 800))]
   <[h2 "<[my-component 0]"]

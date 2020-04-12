@@ -308,7 +308,8 @@
                                            (update-in [anc-id :counts]
                                                       #(dissoc %1 @curr-id))))))
               (doseq [[anc-id pushes] (:ancestors next)]
-                (swap! ancestor-data #(assoc-in %1 [anc-id :counts next-id] pushes)))
+                (swap! ancestor-data #(assoc-in %1 [anc-id :counts next-id]
+                                                pushes)))
               (reset! curr-id next-id)
               (@curr-off)
               ((process-message ancestor-data send-self! e)
@@ -340,6 +341,25 @@
 (defn flat-map [f e] (fmap :val (raw-flat-map f e)))
 
 (defn flatten [ee] (flat-map identity ee))
+
+(defn defer-off
+  ([e] (defer-off e 0))
+  ([e ms]
+   (let [soft-on? (atom false)
+         on? (atom false)
+         off-fn (atom (fn []))]
+     (on! (Event (fn [send-self!]
+                   (reset! soft-on? true)
+                   (when (not @on?)
+                     (reset! off-fn (subscribe! e send-self!))
+                     (reset! on? true))
+                   (fn []
+                     (reset! soft-on? false)
+                     (go (<! (timeout ms))
+                         (when (not @soft-on?)
+                           (reset! on? false)
+                           (@off-fn)
+                           (reset! off-fn (fn [])))))))))))
 
 (extend-protocol Monoid
   RawEvent

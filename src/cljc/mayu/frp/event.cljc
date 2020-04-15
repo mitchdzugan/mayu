@@ -1,6 +1,6 @@
 (ns mayu.frp.event
   (:require [allpa.core :as a
-             :refer [curry deftagged defn-match fn-match match]]
+             :refer [curry defprotomethod]]
             [mayu.async
              :refer [go go-loop timeout <! chan >! close!]]
             [wayra.monoid
@@ -8,8 +8,7 @@
             #?(:clj [clojure.core :as core]
                :cljs [cljs.core :as core])
             #?(:clj [clojure.pprint :refer [pprint]]
-               :cljs [cljs.pprint :refer [pprint]])
-            ))
+               :cljs [cljs.pprint :refer [pprint]])))
 
 (defrecord RawEvent [atom])
 
@@ -19,8 +18,8 @@
 
 (defn never? [e] (= 0 (:id @(:atom e))))
 
-(deftagged Val [val [ancestors {}]])
-(deftagged Ancestors [ancestors])
+(defrecord Val [val ancestors])
+(defrecord Ancestors [ancestors])
 
 (defn Event
   ([] (Event (fn [_] (fn [])) {}))
@@ -39,9 +38,7 @@
                         :num-awaiting 0
                         :awaiting-on (chan)})))))
 
-(defn-match val?
-  [(Val)] true
-  [_] false)
+(defprotomethod val? [_] Val true Ancestors false)
 
 (defn send! [e msg]
   (if (never? e)
@@ -80,7 +77,7 @@
               (send! e (get msgs id)))))))
     e))
 
-(defn push! [e val] (send! e (Val val)))
+(defn push! [e val] (send! e (->Val val {})))
 
 (defn subscribe! [e on]
   (if (never? e)
@@ -98,18 +95,16 @@
         (when (= 0 (sub-count))
           ((:off-callback @atom)))))))
 
-(defn consume! [e on] (subscribe! e (fn-match [(Val val)] (on val) [_] nil)))
+(defn consume! [e on] (subscribe! e (fn [msg]
+                                      (when (val? msg) (on (:val msg))))))
 
 (defn shadow [e-src]
   (if (never? e-src)
     never
     (on! (Event
-          #(subscribe! e-src
-                       (fn-match
-                        [(Val :as msg)]
-                        (% (assoc msg :ancestors {}))
-
-                        [_] nil))))))
+          #(subscribe! e-src (fn [msg]
+                               (when (val? msg)
+                                 (% (assoc msg :ancestors {})))))))))
 
 (defn map [f e-src]
   (if (never? e-src)
@@ -117,12 +112,10 @@
     (let [{:keys [atom]} e-src
           {:keys [id ancestors pushes]} @atom]
       (on! (Event
-            #(subscribe! e-src
-                         (fn-match
-                          [(Val :as msg)]
-                          (% (update msg :val f))
-
-                          [msg] (% msg)))
+            #(subscribe! e-src (fn [msg]
+                                 (% (if (val? msg)
+                                      (update msg :val f)
+                                      msg))))
             (assoc ancestors id pushes))))))
 
 (defn reduce [r i e-src]
@@ -132,13 +125,11 @@
           {:keys [atom]} e-src
           {:keys [id ancestors pushes]} @atom]
       (on! (Event
-            #(subscribe! e-src
-                         (fn-match
-                          [(Val val :as msg)]
-                          (do (swap! a-acc (fn [acc] (r acc val)))
-                              (% (assoc msg :val @a-acc)))
-
-                          [msg] (% msg)))
+            #(subscribe! e-src (fn [{:keys [val] :as msg}]
+                                 (if (val? msg)
+                                   (do (swap! a-acc (fn [acc] (r acc val)))
+                                       (% (assoc msg :val @a-acc)))
+                                   (% msg))))
             (assoc ancestors id pushes))))))
 
 
@@ -150,13 +141,10 @@
           ]
       (on! (Event
             #(subscribe! e-src
-                         (fn-match
-                          [(Val val :as msg)]
-                          (if (p val)
-                            (% msg)
-                            (% (Ancestors (:ancestors msg))))
-
-                          [msg] (% msg)))
+                         (fn [{:keys [val ancestors] :as msg}]
+                           (cond (and (val? msg)
+                                      (not (p val))) (% (->Ancestors ancestors))
+                                 :else (% msg))))
             (assoc ancestors id pushes))))))
 
 (defn to-ancestors [ancestor-data]
@@ -231,10 +219,10 @@
             (on! (Event #(on-required events ancestor-data %1)
                         (to-ancestors ancestor-data)))))]
 
-    (match events
-           [] never
-           [event] (map #(-> {:val %1 :sent-sibling? false}) event)
-           events (perform-join events))))
+    (case (count events)
+      0 never
+      1 (map #(-> {:val %1 :sent-sibling? false}) (first events))
+      (perform-join events))))
 
 (defn join [& events] (map :val (apply raw-join events)))
 
@@ -273,7 +261,7 @@
                      (go-loop []
                        (let [msg (<! c)]
                          (when (not= :off msg)
-                           (%1 (Val :on))
+                           (%1 (->Val :on {}))
                            (<! (timeout ms))
                            (>! c :on)
                            (recur))))
@@ -313,7 +301,7 @@
               (reset! curr-id next-id)
               (@curr-off)
               ((process-message ancestor-data send-self! e)
-               (Ancestors (:ancestors msg)))
+               (->Ancestors (:ancestors msg)))
               (reset! curr-off
                       (subscribe! e-next
                                   (process-message ancestor-data
@@ -322,15 +310,12 @@
       (on! (Event
             (fn [send-self!]
               (reset! full-off
-                      (subscribe! e
-                                  (fn-match
-                                   [(Val :as msg)]
-                                   (process-val send-self! msg)
-
-                                   [msg]
-                                   ((process-message ancestor-data
-                                                     send-self!
-                                                     e) msg))))
+                      (subscribe! e (fn [msg]
+                                      (if (val? msg)
+                                        (process-val send-self! msg)
+                                        ((process-message ancestor-data
+                                                          send-self!
+                                                          e) msg)))))
               (fn []
                 (@curr-off)
                 (@full-off)

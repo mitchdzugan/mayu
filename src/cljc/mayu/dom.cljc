@@ -4,7 +4,7 @@
             [mayu.frp.event :as e]
             [mayu.frp.signal :as s]
             [mayu.mdom
-             :refer [MText MCreateElement MBind]]
+             :refer [->MText ->MCreateElement ->MBind]]
             [wayra.core :as w
              :refer [defnm defm mdo fnm]]))
 
@@ -22,7 +22,7 @@
 
 (defnm update-in-env [ks f m] (w/local #(update-in %1 (concat [:env] ks) f) m))
 
-(defnm text [& s] (w/tell {:mdom (MText (apply str s))}))
+(defnm text [& s] (w/tell {:mdom (->MText (apply str s))}))
 
 (defm curr-path
   {:keys [path last-unique-step]} <- w/ask
@@ -68,7 +68,7 @@
                      (get existing target)
                      (let [res
                            (-> #(let [handler (fn [dom-event]
-                                                (%1 (e/Val dom-event)))]
+                                                (%1 (e/->Val dom-event {})))]
                                   (.addEventListener el target handler)
                                   (fn []
                                     (.removeEventListener el target handler)))
@@ -78,7 +78,7 @@
                        (aset el "__mayu_events" (assoc existing target res))
                        res)))))))]
   [[{:res res :make-event-from-target make-event-from-target}
-    (curry update :mdom #(-> [(MCreateElement tag key path attrs %1)]))]])
+    (curry update :mdom #(-> [(->MCreateElement tag key path attrs %1)]))]])
 
 (defnm create-element
   ([tag] (create-element tag {} (w/pure nil)))

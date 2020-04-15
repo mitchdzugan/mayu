@@ -1,10 +1,8 @@
-(ns mayu.mdom
-  (:require [allpa.core
-             :refer [deftagged]]))
+(ns mayu.mdom)
 
-(deftagged MText [s])
-(deftagged MCreateElement [tag key path attrs children])
-(deftagged MBind [a-bind])
+(defrecord MText [s])
+(defrecord MCreateElement [tag key path attrs children])
+(defrecord MBind [a-bind])
 
 
 

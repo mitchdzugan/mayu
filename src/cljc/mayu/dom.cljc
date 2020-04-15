@@ -5,24 +5,8 @@
             [mayu.frp.signal :as s]
             [mayu.mdom
              :refer [MText MCreateElement MBind]]
-            [wayra.impl :as wimpl]
             [wayra.core :as w
-             :refer [defnm defm mdo]]))
-
-(def tags
-  ["a" "abbr" "acronym" "address" "applet" "area" "article" "aside" "audio" "b"
-   "base" "basefont" "bdo" "big" "blockquote" "body" "br" "button" "canvas"
-   "caption" "center" "cite" "code" "col" "colgroup" "datalist" "dd" "del" "dfn"
-   "div" "dl" "dt" "em" "embed" "fieldset" "figcaption" "figure" "font" "footer"
-   "form" "frame" "frameset" "head" "header" "h1" "h2" "h3" "h4" "h5" "h6" "hr"
-   "html" "i" "iframe" "img" "input" "ins" "kbd" "label" "legend" "li" "link"
-   "main" "map" "mark" "meta" "meter" "nav" "noscript" "object" "ol" "optgroup"
-   "option" "p" "param" "pre" "progress" "q" "s" "samp" "script" "section"
-   "select" "small" "source" "span" "strike" "strong" "style" "sub" "sup"
-   "table" "tbody" "td" "textarea" "tfoot" "th" "thead" "time" "title" "tr" "u"
-   "ul" "var" "video" "wbr"])
-
-(def tag-map (reduce #(assoc %1 %2 true) {} tags))
+             :refer [defnm defm mdo fnm]]))
 
 (defm env (w/asks :env))
 
@@ -49,20 +33,19 @@
   [(conj unique-path last-unique-step)])
 
 (defnm step [label m]
-  {:keys [key label-counts]} <- w/get
+  {:keys [label-counts]} <- w/get
   {:keys [path unique-path last-step last-unique-step]} <- w/ask
-  let [full-label (str label "." key)
-       label-count (get label-counts full-label 0)
-       full-unique-label (str full-label "." label-count)]
-  (w/modify #(merge %1 {:key nil :label-counts {}}))
+  let [label-count (get label-counts label 0)
+       unique-label (str label "." label-count)]
   res <- (w/local (comp #(update %1 :path (curry conj last-step))
                         #(update %1 :unique-path (curry conj last-unique-step))
-                        #(assoc %1 :last-step full-label)
-                        #(assoc %1 :last-unique-step full-unique-label))
+                        #(assoc %1 :last-step label)
+                        #(assoc %1 :last-unique-step unique-label))
                   m)
-  (w/modify #(merge %1 {:key nil :label-counts (assoc label-counts
-                                                      full-label
-                                                      (inc label-count))}))
+  (w/modify #(merge %1 {:key nil
+                        :label-counts (assoc label-counts
+                                             label
+                                             (inc label-count))}))
   [res])
 
 (defn on-click [{:keys [make-event-from-target]}]
@@ -128,7 +111,8 @@
 (defnm bind [s f]
   (step "bind"
    (mdo
-    {:keys [init-writer reader state]} <- wimpl/raw-get
+    init-writer <- w/erased
+    reader <- w/ask
     let [{:keys [signal]}
          (s/build (s/map #(w/exec {:init-writer (w/mempty init-writer)
                                    :reader reader}
@@ -139,7 +123,9 @@
 ;; TODO unsure of implementation details
 (defnm memo [])
 
-(defnm keyed [k] (w/modify #(merge %1 {:key k})))
+(defnm keyed [k m]
+  (step k (mdo (w/modify #(assoc %1 :key k))
+               m)))
 
 ;; TODO need use/collect/signals implemented
 (defnm collect-and-reduce [])
@@ -152,7 +138,11 @@
 (defnm unstash [{:keys [mdom]}] (w/eachm mdom #(w/tell {:mdom %1})))
 
 (defn run [e-el env m use-mdom]
-  (->> m
+  (->> (collect ::request-render
+                (fnm [e]
+                     result <- m
+                     [{:result m
+                       :request-render e}]))
        (w/exec {:reader {:e-el e-el
                          :env env
                          :last-step ::root

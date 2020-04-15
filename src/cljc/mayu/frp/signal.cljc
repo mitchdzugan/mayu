@@ -34,10 +34,10 @@
 (def changed :changed)
 (defn consume! [s f] ((:consume! s) f))
 
-(defn map [f s] (from (f (inst! s)) (e/map f (changed s))))
-
 (defn build [b]
   (let [{:keys [result writer]} (w/exec {} b)]
     {:off (fn [] (doseq [off writer]
                    (off)))
      :signal result}))
+
+(defn map [f s] (from (f (inst! s)) (e/map f (changed s))))

@@ -5,11 +5,11 @@
             [mayu.frp.event :as e]
             [mayu.mdom
              :refer [MText MCreateElement MBind]]
-            [snabbdom :refer [init h]]
-            [snabbdom.modules.attributes :as attrs]
-            [snabbdom.modules.class :as class]
-            [snabbdom.modules.eventlisteners :as el]
-            [snabbdom.modules.style :as style]))
+            ["snabbdom" :refer [init h]]
+            ["snabbdom/modules/attributes" :as attrs]
+            ["snabbdom/modules/class" :as class]
+            ["snabbdom/modules/eventlisteners" :as el]
+            ["snabbdom/modules/style" :as style]))
 
 (defn to-vdoms [e-el]
   (fn-match
@@ -25,6 +25,7 @@
                   (#(if (nil? key) %1 (assoc %1 :key key)))
                   clj->js)
          vchildren (clj->js (mapcat (to-vdoms e-el) children))]
+     (.log js/console {:key key :path path})
      [(h tag data vchildren)])
 
    [(MBind)]

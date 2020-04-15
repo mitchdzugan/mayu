@@ -1,6 +1,7 @@
 (ns mayu.macros
   (:require [wayra.core :as w
              :refer [mdo defnm fnm]]
+            [mayu.tags :as tags]
             [mayu.dom :as dom])
   #?(:cljs (:require-macros [mayu.macros :refer [ui defui]])))
 
@@ -8,7 +9,7 @@
    (defmacro ui [& body]
      (let [mk-args (fn [els]
                      (let [[f & args] els
-                           f (if (get dom/tag-map (name f))
+                           f (if (get tags/tag-map (name f))
                                `(partial mayu.dom/create-element ~(name f))
                                f)
                            els (concat [f] args)
@@ -61,4 +62,4 @@
 
 #?(:clj
    (defmacro defui [label args & body]
-     `(defn ~label ~args (ui ~@body))))
+     `(defn ~label ~args (dom/step ~(str label) (ui ~@body)))))

@@ -37,6 +37,12 @@
     [(println "Rendering Component Top Level")]
     s-score <- (dom/envs ::score)
     <[dom/bind s-score $[score]=
+      <[dom/collect-and-reduce ::score2 #(+ %1 %2) 0 $=
+        <[button "Inc scores"] btn >
+        (dom/emit ::score2 (e/map (varg# 1) (dom/on-click btn)))
+        s-score2 <- (dom/envs ::score2)
+        <[dom/bind s-score2 $[score2]=
+          <[div (str "Score2: " score2)]]]
       <[change-score-button 1]
       <[score-display score]
       <[change-score-button -1]]])

@@ -237,22 +237,24 @@
    (let [e-channel (chan)
          off-channel (chan)
          e-init (Event (fn [send-self!]
-                         (go (let [e (<! e-channel)
+                         (go (let [{:keys [e quick-off]} (<! e-channel)
                                    {:keys [ancestors]} @(:atom e)
-                                   off (subscribe! e send-self!)
-                                   ]
+                                   off (subscribe! e send-self!)]
                                (on! e)
+                               (quick-off)
                                (>! off-channel off)))
                          (fn [] (go ((<! off-channel))))))
          res (f e-init)
          e (from-res res)
+         ;; TODO this is a hack but Im not sure why
+         quick-off (consume! e (fn [_]))
          atom-init (:atom e-init)
          {:keys [ancestors]} @(:atom e)]
      (swap! atom-init #(assoc %1 :ancestors ancestors))
      (on! e-init)
      (swap! (:atom e) #(merge %1 {:awaiting-on (chan)
                                   :on? false}))
-     (go (>! e-channel e))
+     (go (>! e-channel {:e e :quick-off quick-off}))
      res)))
 
 (defn timer [ms]

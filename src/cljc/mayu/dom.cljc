@@ -3,6 +3,8 @@
              :refer [curry]]
             [mayu.frp.event :as e]
             [mayu.frp.signal :as s]
+            [mayu.async
+             :refer [go go-loop timeout <! chan >! close!]]
             [mayu.mdom
              :refer [->MText ->MCreateElement ->MBind]]
             [wayra.core :as w
@@ -92,7 +94,8 @@
    {:keys [key]} <- w/get
    (w/pass (step tag (inner-create-element key tag attrs m)))))
 
-(defnm emit [k e] (w/tell {:events {k e}}))
+(defnm emit [k e]
+  (w/tell {:events {k e}}))
 
 (defnm collect [k mf]
   (w/pass #(assoc-in %1 [:events k] e/never)
@@ -104,34 +107,47 @@
 
 ;; TODO need frp/signals implemented
 (defnm bind [s f]
-  (step "bind"
-   (mdo
-    init-writer <- w/erased
-    reader <- w/ask
-    s-exec <- (s/map #(->> (f %1)
-                           (w/exec {:init-writer init-writer
-                                    :reader reader}))
-                     s)
-    s-writer <- (s/map :writer s-exec)
-    s-events <- (s/map :events s-writer)
-    s-result <- (s/map :result s-exec)
-    s-mdom <- (s/map :mdom s-writer)
-    (w/tell {:mdom (->MBind s-mdom)})
-    (emit ::request-render (e/shadow (s/changed s-mdom)))
-    (w/eachm (keys (:events init-writer))
-             #(step %1 (mdo s-event <- (s/map %1 s-events)
-                            (emit %1 (s/unwrap-event s-event)))))
-    [s-result])))
+  (step ::bind
+        (mdo
+         init-writer <- w/erased
+         path <- curr-path
+         {:keys [binds] :as reader} <- w/ask
+         let [bind (or (get-in @binds [path :state])
+                       {:memos (atom {})
+                        :signals (atom {})
+                        :binds (atom {})})]
+         [(swap! binds #(-> %1
+                            (assoc-in [path :used] true)
+                            (assoc-in [path :state] bind)))]
+         s-exec <- (s/map #(->> (f %1)
+                                (w/exec {:init-writer init-writer
+                                         :reader reader}))
+                          s)
+         s-writer <- (s/map :writer s-exec)
+         s-events <- (s/map :events s-writer)
+         s-result <- (s/map :result s-exec)
+         s-mdom <- (s/map :mdom s-writer)
+         (w/tell {:mdom (->MBind s-mdom)})
+         (emit ::request-render (e/shadow (s/changed s-mdom)))
+         (w/eachm (keys (:events init-writer))
+                  #(step %1 (mdo s-event <- (s/map %1 s-events)
+                                 (emit %1 (s/unwrap-event s-event)))))
+         [s-result])))
 
-;; TODO unsure of implementation details
-(defnm memo [])
+(defnm memo [via m]
+  (step ::memo
+        (mdo memos <- (w/asks :memos)
+             path <- curr-path
+             [nil])))
 
 (defnm keyed [k m]
   (step k (mdo (w/modify #(assoc %1 :key k))
                m)))
 
-;; TODO need use/collect/signals implemented
-(defnm collect-and-reduce [])
+(defnm collect-and-reduce [k r i m]
+  (collect k (fnm [e]
+                  s <- (s/from i (e/reduce r i e))
+                  (assoc-env k s m))))
 
 (defnm stash [m]
   (w/pass (mdo [res w] <- (w/listen m)
@@ -145,9 +161,13 @@
         (->> (collect ::request-render
                       (fnm [e]
                            result <- m
-                           [{:result m
+                           [{:result result
                              :request-render e}]))
              (w/exec {:reader {:e-el e-el
+                               :step-fn step
+                               :signals (atom {})
+                               :binds (atom {})
+                               :memos (atom {})
                                :env env
                                :last-step ::root
                                :last-unique-step ::root}

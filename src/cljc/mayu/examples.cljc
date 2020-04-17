@@ -1,5 +1,7 @@
 (ns mayu.examples
-  (:require [mayu.macros
+  (:require [allpa.core
+             :refer [varg#]]
+            [mayu.macros
              :refer [defui ui]]
             [mayu.frp.event :as e]
             [mayu.frp.signal :as s]
@@ -25,15 +27,11 @@
   )
 
 (defui my-ui []
-  <[h2 "<[my-component 0]"]
-  <[my-component 0]
-  <[h2 "<[my-component 1]"]
-  <[my-component 1]
-  <[button "Test"] d-button >
-  let [e (e/reduce inc 0 (dom/on-click d-button))
-       {s :signal} (s/build (s/from 0 e))]
-  <[dom/collect ::test $[e]=
-    <[dom/bind s $[v]= (dom/text v)]
-    <[div "in collector"]
-    ]
-  )
+  <[dom/collect-and-reduce ::score #(+ %1 %2) 0 $=
+    <[button "Click for (+1)"] d-plus >
+    s-score <- (dom/envs ::score)
+    <[dom/bind s-score $[score]=
+      <[div (str "Score: " score)]]
+    <[button "Click for (-1)"] d-minus >
+    (dom/emit ::score (e/map (varg# 1) (dom/on-click d-plus)))
+    (dom/emit ::score (e/map (varg# -1) (dom/on-click d-minus)))])

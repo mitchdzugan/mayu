@@ -103,22 +103,25 @@
                [[res (curry update :events #(dissoc %1 k))]])))
 
 ;; TODO need frp/signals implemented
-(defnm s-use [])
-
-(def log #?(:clj println :cljs #(.log js/console %1)))
-
-;; TODO need frp/signals implemented
 (defnm bind [s f]
   (step "bind"
    (mdo
     init-writer <- w/erased
     reader <- w/ask
-    let [{:keys [signal]}
-         (s/build (s/map #(w/exec {:init-writer (w/mempty init-writer)
-                                   :reader reader}
-                                  (f %1))
-                         s))]
-    [(s/consume! signal #(log (-> %1 :writer :mdom)))])))
+    s-exec <- (s/map #(->> (f %1)
+                           (w/exec {:init-writer init-writer
+                                    :reader reader}))
+                     s)
+    s-writer <- (s/map :writer s-exec)
+    s-events <- (s/map :events s-writer)
+    s-result <- (s/map :result s-exec)
+    s-mdom <- (s/map :mdom s-writer)
+    (w/tell {:mdom (->MBind s-mdom)})
+    (emit ::request-render (e/shadow (s/changed s-mdom)))
+    (w/eachm (keys (:events init-writer))
+             #(step %1 (mdo s-event <- (s/map %1 s-events)
+                            (emit %1 (s/unwrap-event s-event)))))
+    [s-result])))
 
 ;; TODO unsure of implementation details
 (defnm memo [])
@@ -138,16 +141,19 @@
 (defnm unstash [{:keys [mdom]}] (w/eachm mdom #(w/tell {:mdom %1})))
 
 (defn run [e-el env m use-mdom]
-  (->> (collect ::request-render
-                (fnm [e]
-                     result <- m
-                     [{:result m
-                       :request-render e}]))
-       (w/exec {:reader {:e-el e-el
-                         :env env
-                         :last-step ::root
-                         :last-unique-step ::root}
-                :init-writer {:mdom [] :events {}}})
-       :writer
-       :mdom
-       use-mdom))
+  (let [{:keys [writer result]}
+        (->> (collect ::request-render
+                      (fnm [e]
+                           result <- m
+                           [{:result m
+                             :request-render e}]))
+             (w/exec {:reader {:e-el e-el
+                               :env env
+                               :last-step ::root
+                               :last-unique-step ::root}
+                      :init-writer {:mdom [] :events {}}}))
+        off (e/consume! (e/throttle (:request-render result) 10)
+                        (fn [_] (use-mdom (:mdom writer))))]
+    (use-mdom (:mdom writer))
+    {:off off
+     :result (:result result)}))

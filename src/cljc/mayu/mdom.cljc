@@ -2,7 +2,7 @@
 
 (defrecord MText [s])
 (defrecord MCreateElement [tag key path attrs children])
-(defrecord MBind [a-bind])
+(defrecord MBind [signal])
 
 
 

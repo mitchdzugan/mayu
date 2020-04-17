@@ -13,7 +13,7 @@
                      (e/consume! @e #(when (not= @sval %1)
                                        (reset! sval %1)
                                        (e/push! changed %1)))))]
-  (w/tell (fn [] (@eoff)))
+  ; (w/tell (fn [] (@eoff)))
   [(on!)
    {:off! (fn [] (@eoff))
     :inst! (fn [] @sval)
@@ -39,5 +39,8 @@
     {:off (fn [] (doseq [off writer]
                    (off)))
      :signal result}))
+
+(defn unwrap-event [se]
+  (e/join-skip-siblings (inst! se) (e/map inst! (changed se))))
 
 (defn map [f s] (from (f (inst! s)) (e/map f (changed s))))

@@ -348,6 +348,31 @@
                              (@off-fn)
                              (reset! off-fn (fn []))))))))))))
 
+(defn throttle [e ms]
+  (let [sender (atom (fn [_]))
+        send! (fn [{:keys [val]}] (@sender (->Val val {})))
+        throttling (atom false)
+        queued (atom [])]
+    (on!
+     (Event (fn [send-self!]
+              (reset! sender send-self!)
+              (let [off
+                    (subscribe! e
+                                (fn [msg]
+                                  (when (val? msg)
+                                    (if @throttling
+                                      (reset! queued [msg])
+                                      (do (reset! throttling true)
+                                          (send! msg)
+                                          (go-loop []
+                                            (<! (timeout ms))
+                                            (if (> (count @queued) 0)
+                                              (do (send! (first @queued))
+                                                  (reset! queued [])
+                                                  (recur))
+                                              (reset! throttling false))))))))]
+                (fn [] (off) (reset! sender (fn [_])))))))))
+
 (extend-protocol Monoid
   RawEvent
   (mappend [e1 e2] (join e1 e2))

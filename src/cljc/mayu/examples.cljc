@@ -25,16 +25,15 @@
   )
 
 (defui my-ui []
-  <[button "Test"] d-button >
-  [(e/consume! (dom/on-click d-button) println)]
-  let [e (e/reduce inc 0 (e/timer 1000))
-       {s :signal} (s/build (s/from 0 e))]
   <[h2 "<[my-component 0]"]
   <[my-component 0]
   <[h2 "<[my-component 1]"]
   <[my-component 1]
+  <[button "Test"] d-button >
+  let [e (e/reduce inc 0 (dom/on-click d-button))
+       {s :signal} (s/build (s/from 0 e))]
   <[dom/collect ::test $[e]=
-    ; <[dom/bind s $[v]= (dom/text v)]
+    <[dom/bind s $[v]= (dom/text v)]
     <[div "in collector"]
     ]
   )

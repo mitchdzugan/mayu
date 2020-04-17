@@ -41,6 +41,6 @@
      :signal result}))
 
 (defn unwrap-event [se]
-  (e/join-skip-siblings (inst! se) (e/map inst! (changed se))))
+  (e/join-skip-siblings (inst! se) (e/flatten (changed se))))
 
 (defn map [f s] (from (f (inst! s)) (e/map f (changed s))))

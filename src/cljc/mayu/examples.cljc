@@ -23,15 +23,21 @@
     <[li "this"]
     <[dom/unstash stashed]]
   <[h3 "this is a header"]
-  <[p "this is a test paragraph!!"]
-  )
+  <[p "this is a test paragraph!!"])
+
+(defui change-score-button [change]
+  <[button (str "Click for " change " points")] btn >
+  (dom/emit ::score (e/map (varg# change) (dom/on-click btn))))
+
+(defui score-display [score]
+  <[div (str "Score: " score)])
 
 (defui my-ui []
   <[dom/collect-and-reduce ::score #(+ %1 %2) 0 $=
-    <[button "Click for (+1)"] d-plus >
+    [(println "Rendering Component Top Level")]
     s-score <- (dom/envs ::score)
     <[dom/bind s-score $[score]=
-      <[div (str "Score: " score)]]
-    <[button "Click for (-1)"] d-minus >
-    (dom/emit ::score (e/map (varg# 1) (dom/on-click d-plus)))
-    (dom/emit ::score (e/map (varg# -1) (dom/on-click d-minus)))])
+      <[change-score-button 1]
+      <[score-display score]
+      <[change-score-button -1]]])
+

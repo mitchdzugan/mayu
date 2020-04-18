@@ -151,8 +151,10 @@
   (a/map-values (fn [id-data _] (apply min (-> id-data :counts vals)))
                 @ancestor-data))
 
-(defn process-message [ancestor-data send-self! e-src]
+(defn process-message [ancestor-data SRC send-self! e-src]
   (fn [msg]
+    (when (= SRC :RAW_JOIN)
+      (println (count (keys @ancestor-data))))
     (let [{:keys [id]} @(:atom e-src)
           {:keys [type val ancestors]} msg
           awaiting (atom 1)
@@ -194,9 +196,29 @@
 
         on-required
         (fn [events ancestor-data send-self!]
-          (let [offs (-> #(subscribe! %1 (process-message ancestor-data
-                                                          send-self!
-                                                          %1))
+          (let [offs (-> #(let [off (subscribe! %1 (process-message ancestor-data
+                                                                    :RAW_JOIN
+                                                                    send-self!
+                                                                    %1))]
+                            (fn []
+                              (let [id (:id @(:atom %1))]
+                                (swap! ancestor-data
+                                       (fn [anc-data]
+                                         (into {}
+                                               (->> anc-data
+                                                    (a/map-values (fn [data _]
+                                                                    (-> data
+                                                                        (update :counts (curry dissoc id))
+                                                                        (update :stashed
+                                                                                (partial remove
+                                                                                         (fn [spec]
+                                                                                           (= id (:id spec))))))))
+                                                    (core/filter (fn [[_ data]]
+                                                                   (not= 0 (+ (count (:counts data))
+                                                                              (count (:stashed data))))
+                                                                   true
+                                                                   )))))))
+                              (off)))
                          (core/map events)
                          vec)]
             (fn [] (doseq [off offs] (off)))))
@@ -300,13 +322,18 @@
               (doseq [[anc-id pushes] (:ancestors next)]
                 (swap! ancestor-data #(assoc-in %1 [anc-id :counts next-id]
                                                 pushes)))
+              (swap! ancestor-data #(into {} (core/filter (fn [[_ data]]
+                                                            (not= 0 (+ (count (:counts data))
+                                                                       (count (:stashed data)))))
+                                                          %1)))
               (reset! curr-id next-id)
               (@curr-off)
-              ((process-message ancestor-data send-self! e)
+              ((process-message ancestor-data :FLAT_MAP1 send-self! e)
                (->Ancestors (:ancestors msg)))
               (reset! curr-off
                       (subscribe! e-next
                                   (process-message ancestor-data
+                                                   :FLAT_MAP2
                                                    send-self!
                                                    e-next)))))]
       (on! (Event
@@ -316,6 +343,7 @@
                                       (if (val? msg)
                                         (process-val send-self! msg)
                                         ((process-message ancestor-data
+                                                          :FLAT_MAP3
                                                           send-self!
                                                           e) msg)))))
               (fn []

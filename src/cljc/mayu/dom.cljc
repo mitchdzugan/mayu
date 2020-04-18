@@ -97,6 +97,17 @@
 (defnm emit [k e]
   (w/tell {:events {k e}}))
 
+#_(defnm emit [k e]
+  (step ::emit (step k (mdo path <- curr-path
+                            events <- (w/asks :events)
+                            let [curr (get @events path)]
+                            (not (nil? curr)) --> [(e/push! curr e)]
+                            let [nxt (e/on! (e/Event))]
+                            [(e/push! nxt e)
+                             (swap! events #(assoc %1 path nxt))]
+                            (w/tell {:events {k (e/flatten nxt)}})))))
+
+
 (defnm collect [k mf]
   (w/pass #(assoc-in %1 [:events k] e/never)
           (mdo {:keys [res]} <- (w/preemptm e/preempt :e
@@ -117,9 +128,9 @@
                         :signals (atom {})
                         :binds (atom {})})]
          [(swap! binds #(-> %1
-                            (assoc-in [path :used] true)
+                            (assoc-in [path :used?] true)
                             (assoc-in [path :state] bind)))]
-         s-exec <- (s/map #(->> (f %1)
+         s-exec <- (s/map #(->> (w/local (curry merge bind) (f %1))
                                 (w/exec {:init-writer init-writer
                                          :reader reader}))
                           s)
@@ -146,7 +157,7 @@
 
 (defnm collect-and-reduce [k r i m]
   (collect k (fnm [e]
-                  s <- (s/from i (e/reduce r i e))
+                  s <- (s/reduce r i e)
                   (assoc-env k s m))))
 
 (defnm stash [m]
@@ -155,6 +166,19 @@
                  (curry assoc :mdom [])]])))
 
 (defnm unstash [{:keys [mdom]}] (w/eachm mdom #(w/tell {:mdom %1})))
+
+(defm active-signal
+  path <- curr-path
+  ; [(println [:path path])]
+  signals <- (w/asks :signals)
+  [(get-in @signals [path :signal])])
+
+(defnm set-active [signal]
+  path <- curr-path
+  signals <- (w/asks :signals)
+  [(swap! signals #(assoc %1 path {:signal signal
+                                   :off (fn [] (s/off! signal))
+                                   :used? true}))])
 
 (defn run [e-el env m use-mdom]
   (let [{:keys [writer result]}
@@ -165,6 +189,8 @@
                              :request-render e}]))
              (w/exec {:reader {:e-el e-el
                                :step-fn step
+                               :active-signal active-signal
+                               :set-active set-active
                                :signals (atom {})
                                :binds (atom {})
                                :memos (atom {})
@@ -175,5 +201,4 @@
         off (e/consume! (e/throttle (:request-render result) 10)
                         (fn [_] (use-mdom (:mdom writer))))]
     (use-mdom (:mdom writer))
-    {:off off
-     :result (:result result)}))
+    {:off off :result (:result result)}))

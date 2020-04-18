@@ -124,7 +124,8 @@
          path <- curr-path
          {:keys [binds] :as reader} <- w/ask
          let [bind (or (get-in @binds [path :state])
-                       {:memos (atom {})
+                       {:offs (atom '())
+                        :memos (atom {})
                         :signals (atom {})
                         :binds (atom {})})]
          [(swap! binds #(-> %1
@@ -191,6 +192,7 @@
                                :step-fn step
                                :active-signal active-signal
                                :set-active set-active
+                               :offs (atom '())
                                :signals (atom {})
                                :binds (atom {})
                                :memos (atom {})

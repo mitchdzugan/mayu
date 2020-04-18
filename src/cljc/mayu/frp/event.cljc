@@ -153,7 +153,7 @@
 
 (defn process-message [ancestor-data SRC send-self! e-src]
   (fn [msg]
-    (when (= SRC :RAW_JOIN)
+    #_(when (= SRC :RAW_JOIN)
       (println (count (keys @ancestor-data))))
     (let [{:keys [id]} @(:atom e-src)
           {:keys [type val ancestors]} msg
@@ -177,14 +177,14 @@
       (let [curr (to-ancestors ancestor-data)]
         (doseq [[anc-id count] ancestors]
           (cond
-            (and (< (get prev anc-id) count)
+            (and (< (get prev anc-id count) count)
                  (< (get curr anc-id) count))
             (do (swap! awaiting inc)
                 (when (val? msg)
                   (swap! ancestor-data (curry update-in [anc-id :stashed]
                                               #(conj %1 {:dec dec-awaiting
                                                          :id id})))))
-            (< (get prev anc-id) count)
+            (< (get prev anc-id count) count)
             (do (core/reduce #((:dec %2) %1) (val? msg)
                              (get-in @ancestor-data [anc-id :stashed]))
                 (swap! ancestor-data #(assoc-in %1 [anc-id :stashed] '()))))))

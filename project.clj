@@ -5,8 +5,8 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
 
   :dependencies [[org.clojure/clojure "1.10.1"]
-                 [allpa "0.1.30"]
-                 [wayra "0.0.21"]
+                 [allpa "0.1.33"]
+                 [wayra "0.0.22"]
                  [org.clojure/core.async "1.1.587"]
                  [net.cgrand/macrovich "0.2.1"]
                  [cljsjs/snabbdom "0.7.4-0"]

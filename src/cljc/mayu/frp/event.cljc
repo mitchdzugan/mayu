@@ -1,7 +1,7 @@
 (ns mayu.frp.event
   (:require [allpa.core :as a
              :refer [curry defprotomethod]]
-            [mayu.async
+            [clojure.core.async
              :refer [go go-loop timeout <! chan >! close!]]
             [wayra.monoid
              :refer [Monoid mappend maplus mempty]]
@@ -104,7 +104,8 @@
     (on! (Event
           #(subscribe! e-src (fn [msg]
                                (when (val? msg)
-                                 (% (assoc msg :ancestors {})))))))))
+                                 (% (assoc msg :ancestors {}))))))))
+  )
 
 (defn map [f e-src]
   (if (never? e-src)
@@ -116,7 +117,8 @@
                                  (% (if (val? msg)
                                       (update msg :val f)
                                       msg))))
-            (assoc ancestors id pushes))))))
+            (assoc ancestors id pushes)))))
+  )
 
 (defn reduce [r i e-src]
   (if (never? e-src)
@@ -130,7 +132,8 @@
                                    (do (swap! a-acc (fn [acc] (r acc val)))
                                        (% (assoc msg :val @a-acc)))
                                    (% msg))))
-            (assoc ancestors id pushes))))))
+            (assoc ancestors id pushes)))))
+  )
 
 
 (defn filter [p e-src]
@@ -145,7 +148,8 @@
                            (cond (and (val? msg)
                                       (not (p val))) (% (->Ancestors ancestors))
                                  :else (% msg))))
-            (assoc ancestors id pushes))))))
+            (assoc ancestors id pushes)))))
+  )
 
 (defn to-ancestors [ancestor-data]
   (a/map-values (fn [id-data _] (apply min (-> id-data :counts vals)))

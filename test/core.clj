@@ -96,7 +96,7 @@
                         [:e3 3]
                         [:e2 4]
                         [:e2 5]]))))
-  (testing "join"
+  #_(testing "join"
     (let [e1 (e/on! (e/Event))
           e2 (->> e1
                   (e/filter #(< %1 6))
@@ -117,7 +117,7 @@
       (e/push! e1 5)
       (e/push! e1 6)
       (off)
-      (is (= @consumed [[1 :e4]
+      (is (= @consumed [[1 :e2]
                         [2 :e4]
                         [3 :e3]
                         [4 :e3]
@@ -142,8 +142,8 @@
       (e/push! e1 5)
       (e/push! e1 6)
       (off)
-      (is (= @consumed [[1 :e3]
-                        [1 :e2]
+      (is (= @consumed [[1 :e2]
+                        [1 :e3]
                         [1 :e4]
                         [2 :e3]
                         [2 :e2]
@@ -159,17 +159,17 @@
           offs (atom 0)
           consumed1 (atom [])
           consumed2 (atom [])
-          e (e/defer-off (e/on! (e/Event (fn [_]
-                                           (swap! ons inc)
-                                           (fn [] (swap! offs inc)))))
-              50)
+          e (e/on! (e/Event (fn [_]
+                              (swap! ons inc)
+                              (fn [] (swap! offs inc)))))
+          ed (e/defer-off e 50)
           _ (e/push! e 1)
-          off1 (e/consume! e #(swap! consumed1 (curry conj %1)))
+          off1 (e/consume! ed #(swap! consumed1 (curry conj %1)))
           _ (e/push! e 2)
           _ (off1)
           _ (e/push! e 3)
           _ (<!! (timeout 10))
-          off2 (e/consume! e #(swap! consumed2 (curry conj %1)))
+          off2 (e/consume! ed #(swap! consumed2 (curry conj %1)))
           _ (e/push! e 4)
           _ (off2)
           _ (e/push! e 5)]

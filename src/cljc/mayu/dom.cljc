@@ -97,17 +97,6 @@
 (defnm emit [k e]
   (w/tell {:events {k e}}))
 
-#_(defnm emit [k e]
-  (step ::emit (step k (mdo path <- curr-path
-                            events <- (w/asks :events)
-                            let [curr (get @events path)]
-                            (not (nil? curr)) --> [(e/push! curr e)]
-                            let [nxt (e/on! (e/Event))]
-                            [(e/push! nxt e)
-                             (swap! events #(assoc %1 path nxt))]
-                            (w/tell {:events {k (e/flatten nxt)}})))))
-
-
 (defnm collect [k mf]
   (w/pass #(assoc-in %1 [:events k] e/never)
           (mdo {:keys [res]} <- (w/preemptm e/preempt :e
@@ -116,7 +105,6 @@
                                                   [{:res res :e e}]))
                [[res (curry update :events #(dissoc %1 k))]])))
 
-;; TODO need frp/signals implemented
 (defnm bind [s f]
   (step ::bind
         (mdo
@@ -170,7 +158,6 @@
 
 (defm active-signal
   path <- curr-path
-  ; [(println [:path path])]
   signals <- (w/asks :signals)
   [(get-in @signals [path :signal])])
 

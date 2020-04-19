@@ -1,7 +1,7 @@
 (ns mayu.frp.event
   (:require [allpa.core :as a
              :refer [curry defprotomethod]]
-            [clojure.core.async
+            [mayu.async
              :refer [go go-loop timeout <! chan >! close!]]
             [wayra.monoid
              :refer [Monoid mappend maplus mempty]]
@@ -10,21 +10,23 @@
             #?(:clj [clojure.pprint :refer [pprint]]
                :cljs [cljs.pprint :refer [pprint]])))
 
-(defrecord RawEvent [atom])
+(defrecord Val [val deps])
+(defrecord Deps [deps])
+(defrecord Off [])
+
+
+(defrecord RawEvent [state])
 
 (def next-event-id (atom 1))
 
 (def never (->RawEvent (atom {:id 0 :on? true})))
 
-(defn never? [e] (= 0 (:id @(:atom e))))
-
-(defrecord Val [val ancestors])
-(defrecord Ancestors [ancestors])
+(defn never? [e] (= 0 (:id @(:state e))))
 
 (defn Event
   ([] (Event (fn [_] (fn [])) {}))
-  ([on-required] (Event on-required {}))
-  ([on-required ancestors]
+  ([on-required] (Event on-required true))
+  ([on-required source?]
    (let [id @next-event-id]
      (swap! next-event-id inc)
      (->RawEvent (atom {:id id
@@ -32,40 +34,30 @@
                         :next-sub-id 1
                         :on-required on-required
                         :off-callback (fn [])
-                        :ancestors ancestors
+                        :source? source?
                         :pushes 1
                         :on? false
                         :num-awaiting 0
                         :awaiting-on (chan)})))))
 
-(defprotomethod val? [_] Val true Ancestors false)
+(defprotomethod val? [_] Val true [Deps Off] false)
 
 (defn send! [e msg]
-  (if (never? e)
-    nil
-    (let [{:keys [atom]} e
-          {:keys [type val] merge-ancestors :ancestors} msg
-          {:keys [id pushes ancestors subs on? num-awaiting awaiting-on]} @atom
-          new-pushes (if (val? msg) (inc pushes) pushes)
-          new-ancestors (merge ancestors merge-ancestors)]
+  (when (not (never? e))
+    (let [{:keys [state]} e
+          {:keys [subs on? num-awaiting awaiting-on]} @state]
       (if on?
-        (do (when (contains? ancestors id)
-              (throw (a/Err "Resursive Event Encountered")))
-            (when (or (val? msg)
-                      (not= new-pushes pushes)
-                      (not= new-ancestors ancestors))
-              (swap! atom (curry merge {:pushes new-pushes
-                                        :ancestors new-ancestors}))
-              (doseq [on (vals subs)]
-                (on (assoc-in msg [:ancestors id] new-pushes)))))
-        (do (swap! atom #(update %1 :num-awaiting inc))
+        (doseq [on (vals subs)]
+          (on msg))
+        (do (swap! state #(update %1 :num-awaiting inc))
             (go (>! awaiting-on {:msg msg :order num-awaiting})))))))
 
+
 (defn on! [e]
-  (let [{:keys [atom]} e
-        {:keys [on? awaiting-on num-awaiting]} @atom]
-    (when (not on?)
-      (swap! atom (curry assoc :on? true))
+  (let [{:keys [state]} e
+        {:keys [on? awaiting-on num-awaiting]} @state]
+    (when (and (not (never? e)) (not on?))
+      (swap! state (curry assoc :on? true))
       (go-loop [left num-awaiting
                 msgs {}]
         (if (> left 0)
@@ -77,90 +69,93 @@
               (send! e (get msgs id)))))))
     e))
 
-(defn push! [e val] (send! e (->Val val {})))
+(defn off! [e]
+  (when (not (never? e))
+    (let [{:keys [state]} e
+          {:keys [subs on? num-awaiting awaiting-on]} @state]
+      (doseq [on (vals subs)]
+        (on (->Off)))
+      (swap! state (curry merge {:id 0 :subs nil :awaiting-on nil})))))
+
+(defn push! [e val]
+  (let [{:keys [state]} e
+        {:keys [id pushes source?]} @state]
+    (when (not source?)
+      (throw (a/Err "Can only push to source event types")))
+    (swap! state (curry update :pushes inc))
+    (send! e (->Val val {id (inc pushes)}))))
 
 (defn subscribe! [e on]
   (if (never? e)
     (fn [])
-    (let [{:keys [atom]} e
-          {:keys [next-sub-id on-required]} @atom
-          sub-count (fn [] (count (:subs @atom)))]
-      (swap! atom #(-> %1
+    (let [{:keys [state]} e
+          {:keys [next-sub-id on-required]} @state
+          sub-count (fn [] (count (:subs @state)))]
+      (swap! state #(-> %1
                        (assoc :next-sub-id (inc next-sub-id))
                        (assoc-in [:subs next-sub-id] on)))
       (when (= 1 (sub-count))
-        (swap! atom (curry assoc :off-callback (on-required #(send! e %1)))))
+        (swap! state (curry assoc :off-callback (on-required #(send! e %1)))))
       (fn []
-        (swap! atom (curry update :subs #(dissoc %1 next-sub-id)))
+        (swap! state (curry update :subs #(dissoc %1 next-sub-id)))
         (when (= 0 (sub-count))
-          ((:off-callback @atom)))))))
+          ((:off-callback @state)))))))
 
 (defn consume! [e on] (subscribe! e (fn [msg]
                                       (when (val? msg) (on (:val msg))))))
 
-(defn shadow [e-src]
-  (if (never? e-src)
+
+(defn shadow [e]
+  (if (never? e)
     never
     (on! (Event
-          #(subscribe! e-src (fn [msg]
-                               (when (val? msg)
-                                 (% (assoc msg :ancestors {}))))))))
-  )
+          #(subscribe! e (fn [msg]
+                           (when (val? msg)
+                             (% (assoc msg :deps {})))))))))
 
-(defn map [f e-src]
-  (if (never? e-src)
+(defn map [f e]
+  (if (never? e)
     never
-    (let [{:keys [atom]} e-src
-          {:keys [id ancestors pushes]} @atom]
-      (on! (Event
-            #(subscribe! e-src (fn [msg]
-                                 (% (if (val? msg)
-                                      (update msg :val f)
-                                      msg))))
-            (assoc ancestors id pushes)))))
-  )
+    (on! (Event
+          #(subscribe! e (fn [msg]
+                           (% (if (val? msg)
+                                (update msg :val f)
+                                msg))))
+          false))))
 
-(defn reduce [r i e-src]
-  (if (never? e-src)
+(defn clone [e] (map identity e))
+
+(defn reduce [r i e]
+  (if (never? e)
     never
-    (let [a-acc (atom i)
-          {:keys [atom]} e-src
-          {:keys [id ancestors pushes]} @atom]
+    (let [a-acc (atom i)]
       (on! (Event
-            #(subscribe! e-src (fn [{:keys [val] :as msg}]
-                                 (if (val? msg)
-                                   (do (swap! a-acc (fn [acc] (r acc val)))
-                                       (% (assoc msg :val @a-acc)))
-                                   (% msg))))
-            (assoc ancestors id pushes)))))
-  )
+            #(subscribe! e (fn [{:keys [val] :as msg}]
+                             (if (val? msg)
+                               (do (swap! a-acc (fn [acc] (r acc val)))
+                                   (% (assoc msg :val @a-acc)))
+                               (% msg))))
+            false)))))
 
-
-(defn filter [p e-src]
-  (if (never? e-src)
+(defn filter [p e]
+  (if (never? e)
     never
-    (let [{:keys [atom]} e-src
-          {:keys [id ancestors pushes]} @atom
-          ]
-      (on! (Event
-            #(subscribe! e-src
-                         (fn [{:keys [val ancestors] :as msg}]
-                           (cond (and (val? msg)
-                                      (not (p val))) (% (->Ancestors ancestors))
-                                 :else (% msg))))
-            (assoc ancestors id pushes)))))
-  )
+    (on! (Event
+          #(subscribe! e
+                       (fn [{:keys [val deps] :as msg}]
+                         (cond (and (val? msg)
+                                    (not (p val))) (% (->Deps deps))
+                               :else (% msg))))
+          false))))
 
-(defn to-ancestors [ancestor-data]
+(defn to-deps [dep-data]
   (a/map-values (fn [id-data _] (apply min (-> id-data :counts vals)))
-                @ancestor-data))
+                @dep-data))
 
-(defn process-message [ancestor-data SRC send-self! e-src]
+(defn process-message [dep-data send-self! e-src]
   (fn [msg]
-    #_(when (= SRC :RAW_JOIN)
-      (println (count (keys @ancestor-data))))
-    (let [{:keys [id]} @(:atom e-src)
-          {:keys [type val ancestors]} msg
+    (let [{:keys [id]} @(:state e-src)
+          {:keys [type val deps]} msg
           awaiting (atom 1)
 
           dec-awaiting
@@ -169,81 +164,50 @@
             (if (= 0 @awaiting)
               (do
                 (send-self! (-> msg
-                                (assoc :ancestors (to-ancestors ancestor-data))
+                                (assoc :deps (to-deps dep-data))
                                 (assoc :val {:sent-sibling? sent-sibling?
                                              :val val})))
                 (or sent-sibling? (val? msg)))
               sent-sibling?))
 
-          prev (to-ancestors ancestor-data)]
-      (doseq [[anc-id count] ancestors]
-        (swap! ancestor-data #(assoc-in %1 [anc-id :counts id] count)))
-      (let [curr (to-ancestors ancestor-data)]
-        (doseq [[anc-id count] ancestors]
+          prev (to-deps dep-data)]
+      (doseq [[dep-id count] deps]
+        (swap! dep-data #(assoc-in %1 [dep-id :counts id] count)))
+      (let [curr (to-deps dep-data)]
+        (doseq [[dep-id count] deps]
           (cond
-            (and (< (get prev anc-id count) count)
-                 (< (get curr anc-id) count))
+            (and (< (get prev dep-id count) count)
+                 (< (get curr dep-id) count))
             (do (swap! awaiting inc)
                 (when (val? msg)
-                  (swap! ancestor-data (curry update-in [anc-id :stashed]
-                                              #(conj %1 {:dec dec-awaiting
-                                                         :id id})))))
-            (< (get prev anc-id count) count)
+                  (swap! dep-data (curry update-in [dep-id :stashed]
+                                         #(conj %1 {:dec dec-awaiting
+                                                    :id id})))))
+            (< (get prev dep-id count) count)
             (do (core/reduce #((:dec %2) %1) (val? msg)
-                             (get-in @ancestor-data [anc-id :stashed]))
-                (swap! ancestor-data #(assoc-in %1 [anc-id :stashed] '()))))))
-      (dec-awaiting false))))
-
+                             (get-in @dep-data [dep-id :stashed]))
+                (swap! dep-data #(assoc-in %1 [dep-id :stashed] '()))))))
+      (dec-awaiting (and (not (empty? deps))
+                         (= prev (merge prev deps)))))))
 
 (defn raw-join [& arg-events]
   (let [events (remove never? arg-events)
 
         on-required
-        (fn [events ancestor-data send-self!]
-          (let [offs (-> #(let [off (subscribe! %1 (process-message ancestor-data
-                                                                    :RAW_JOIN
-                                                                    send-self!
-                                                                    %1))]
-                            (fn []
-                              (let [id (:id @(:atom %1))]
-                                (swap! ancestor-data
-                                       (fn [anc-data]
-                                         (into {}
-                                               (->> anc-data
-                                                    (a/map-values (fn [data _]
-                                                                    (-> data
-                                                                        (update :counts (curry dissoc id))
-                                                                        (update :stashed
-                                                                                (partial remove
-                                                                                         (fn [spec]
-                                                                                           (= id (:id spec))))))))
-                                                    (core/filter (fn [[_ data]]
-                                                                   (not= 0 (+ (count (:counts data))
-                                                                              (count (:stashed data))))
-                                                                   true
-                                                                   )))))))
-                              (off)))
+        (fn [events dep-data send-self!]
+          (let [offs (-> #(subscribe! %1 (process-message dep-data
+                                                         send-self!
+                                                         %1))
                          (core/map events)
                          vec)]
-            (fn [] (doseq [off offs] (off)))))
+            (fn []
+              (reset! dep-data {})
+              (doseq [off offs] (off)))))
 
         perform-join
         (fn [events]
-          (let [init-ancestor-data
-                (core/reduce
-                 (fn [data event]
-                   (let [atom (:atom event)
-                         {:keys [id ancestors pushes]} @atom]
-                     (reduce-kv
-                      (fn [data anc-id pushes]
-                        (assoc-in data [anc-id :counts id] pushes))
-                      data
-                      (assoc ancestors id pushes))))
-                 {}
-                 events)
-                ancestor-data (atom init-ancestor-data)]
-            (on! (Event #(on-required events ancestor-data %1)
-                        (to-ancestors ancestor-data)))))]
+          (let [dep-data (atom {})]
+            (on! (Event #(on-required events dep-data %1) false))))]
 
     (case (count events)
       0 never
@@ -257,87 +221,40 @@
        (filter (comp not :sent-sibling?))
        (map :val)))
 
-(defn preempt
-  ([f] (preempt identity f))
-  ([from-res f]
-   (let [e-channel (chan)
-         off-channel (chan)
-         e-init (Event (fn [send-self!]
-                         (go (let [{:keys [e quick-off]} (<! e-channel)
-                                   {:keys [ancestors]} @(:atom e)
-                                   off (subscribe! e send-self!)]
-                               (on! e)
-                               (quick-off)
-                               (>! off-channel off)))
-                         (fn [] (go ((<! off-channel))))))
-         res (f e-init)
-         e (from-res res)
-         ;; TODO this is a hack but Im not sure why
-         quick-off (consume! e (fn [_]))
-         atom-init (:atom e-init)
-         {:keys [ancestors]} @(:atom e)]
-     (swap! atom-init #(assoc %1 :ancestors ancestors))
-     (on! e-init)
-     (swap! (:atom e) #(merge %1 {:awaiting-on (chan)
-                                  :on? false}))
-     (go (>! e-channel {:e e :quick-off quick-off}))
-     res)))
-
-(defn timer [ms]
-  (let [c (chan 1)]
-    (on! (Event #(do (go (>! c :on))
-                     (go-loop []
-                       (let [msg (<! c)]
-                         (when (not= :off msg)
-                           (%1 (->Val :on {}))
-                           (<! (timeout ms))
-                           (>! c :on)
-                           (recur))))
-                     (fn [] (go (>! c :off))))))))
-
 (defn raw-flat-map [f e]
   (if (never? e)
     never
     (let [curr-off (atom (fn []))
           full-off (atom (fn []))
           curr-id (atom nil)
-          {:keys [id ancestors pushes]} @(:atom e)
-          init-ancestor-data (reduce-kv
-                              (fn [data anc-id pushes]
-                                (assoc-in data [anc-id :counts id] pushes))
-                              {}
-                              (assoc ancestors id pushes))
-          ancestor-data (atom init-ancestor-data)
+          {:keys [id pushes]} @(:state e)
+          dep-data (atom {})
 
           process-val
           (fn [send-self! {:keys [val] :as msg}]
             (let [e-next (f val)
-                  next @(:atom e-next)
+                  next @(:state e-next)
                   next-id (:id next)]
-              (doseq [[anc-id data] @ancestor-data]
-                (swap! ancestor-data (fn [curr-data]
-                                       (-> curr-data
-                                           (update-in [anc-id :stashed]
-                                                      (partial remove
-                                                               #(= @curr-id
-                                                                   (:id %1))))
-                                           (update-in [anc-id :counts]
-                                                      #(dissoc %1 @curr-id))))))
-              (doseq [[anc-id pushes] (:ancestors next)]
-                (swap! ancestor-data #(assoc-in %1 [anc-id :counts next-id]
-                                                pushes)))
-              (swap! ancestor-data #(into {} (core/filter (fn [[_ data]]
-                                                            (not= 0 (+ (count (:counts data))
-                                                                       (count (:stashed data)))))
-                                                          %1)))
+              (doseq [[dep-id data] @dep-data]
+                (swap! dep-data (fn [curr-data]
+                                  (-> curr-data
+                                      (update-in [dep-id :stashed]
+                                                 (partial remove
+                                                          #(= @curr-id
+                                                              (:id %1))))
+                                      (update-in [dep-id :counts]
+                                                 #(dissoc %1 @curr-id))))))
+              (swap! dep-data #(into {} (core/filter (fn [[_ data]]
+                                                       (not= 0 (+ (count (:counts data))
+                                                                  (count (:stashed data)))))
+                                                     %1)))
               (reset! curr-id next-id)
               (@curr-off)
-              ((process-message ancestor-data :FLAT_MAP1 send-self! e)
-               (->Ancestors (:ancestors msg)))
+              ((process-message dep-data send-self! e)
+               (->Deps (:deps msg)))
               (reset! curr-off
                       (subscribe! e-next
-                                  (process-message ancestor-data
-                                                   :FLAT_MAP2
+                                  (process-message dep-data
                                                    send-self!
                                                    e-next)))))]
       (on! (Event
@@ -346,20 +263,49 @@
                       (subscribe! e (fn [msg]
                                       (if (val? msg)
                                         (process-val send-self! msg)
-                                        ((process-message ancestor-data
-                                                          :FLAT_MAP3
+                                        ((process-message dep-data
                                                           send-self!
                                                           e) msg)))))
               (fn []
                 (@curr-off)
                 (@full-off)
+                (reset! dep-data {})
                 (reset! curr-off (fn []))
                 (reset! full-off (fn []))))
-            (assoc ancestors id pushes))))))
+            false)))))
 
 (defn flat-map [f e] (map :val (raw-flat-map f e)))
 
 (defn flatten [ee] (flat-map identity ee))
+
+(defn on-preempted [init-id send-self!]
+  (fn [msg]
+    (when (not (nil? (get-in msg [:deps init-id])))
+      (throw (a/Err "Resursive Event Encountered")))
+    (send-self! msg)))
+
+(defn preempt
+  ([f] (preempt identity f))
+  ([from-res f]
+   (let [e-channel (chan)
+         off-channel (chan)
+         e-init (Event (fn [send-self!]
+                         (go (let [{:keys [e quick-off init-id]} (<! e-channel)
+                                   off (subscribe! e (on-preempted init-id
+                                                                   send-self!))]
+                               (on! e)
+                               (quick-off)
+                               (>! off-channel off)))
+                         (fn [] (go ((<! off-channel)))))
+                       false)
+         res (f e-init)
+         e (from-res res)
+         ;; TODO this is a hack but Im not sure why
+         quick-off (consume! e (fn [_]))]
+     (on! e-init)
+     (swap! (:state e) #(merge %1 {:awaiting-on (chan) :on? false}))
+     (go (>! e-channel {:e e :quick-off quick-off}))
+     res)))
 
 (defn defer-off
   ([e] (defer-off e 0))
@@ -380,7 +326,8 @@
                            (when (not @soft-on?)
                              (reset! on? false)
                              (@off-fn)
-                             (reset! off-fn (fn []))))))))))))
+                             (reset! off-fn (fn []))))))
+                   false))))))
 
 (defn throttle [e ms]
   (let [sender (atom (fn [_]))
@@ -405,7 +352,8 @@
                                                   (reset! queued [])
                                                   (recur))
                                               (reset! throttling false))))))))]
-                (fn [] (off) (reset! sender (fn [_])))))))))
+                (fn [] (off) (reset! sender (fn [_])))))
+            false))))
 
 (extend-protocol Monoid
   RawEvent

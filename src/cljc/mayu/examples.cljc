@@ -27,7 +27,8 @@
 
 (defui change-score-button [change]
   <[button (str "Click for " change " points")] btn >
-  (dom/emit ::score (e/map (varg# change) (dom/on-click btn))))
+  (dom/emit ::score (e/map (varg# change) (dom/on-click btn)))
+  [(dom/on-click btn)])
 
 (defui score-display [score]
   <[div (str "Score: " score)])
@@ -37,15 +38,13 @@
     [(println "Rendering Component Top Level")]
     s-score <- (dom/envs ::score)
     <[dom/bind s-score $[score]=
-      ; [(println "Bind 1")]
       <[dom/collect-and-reduce ::score2 #(+ %1 %2) 0 $=
         <[button "Inc scores"] btn >
         (dom/emit ::score2 (e/map (varg# 1) (dom/on-click btn)))
         s-score2 <- (dom/envs ::score2)
         <[dom/bind s-score2 $[score2]=
-          ; [(println "Bind 2")]
           <[div (str "Score2: " score2)]]]
-      <[change-score-button 1]
+      <[change-score-button 1]>
       <[score-display score]
-      <[change-score-button -1]]])
+      <[change-score-button -1]>]])
 

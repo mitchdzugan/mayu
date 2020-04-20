@@ -355,6 +355,33 @@
                 (fn [] (off) (reset! sender (fn [_])))))
             false))))
 
+(defn defer [e ms]
+  (let [sender (atom (fn [_]))
+        send! (fn [{:keys [val]}] (@sender (->Val val {})))]
+    (on!
+     (Event (fn [send-self!]
+              (reset! sender send-self!)
+              (let [off
+                    (subscribe! e
+                                (fn [msg]
+                                  (when (val? msg)
+                                    (go (<! (timeout ms))
+                                        (send! msg)))))]
+                (fn [] (off) (reset! sender (fn [_])))))
+            false))))
+(defn timer [ms]
+  (let [c (chan 1)]
+    (on! (Event #(do (go (>! c :on))
+                     (go-loop []
+                       (let [msg (<! c)]
+                         (when (not= :off msg)
+                           (%1 (->Val :on {}))
+                           (<! (timeout ms))
+                           (>! c :on)
+                           (recur))))
+                     (fn [] (go (>! c :off))))
+                false))))
+
 (extend-protocol Monoid
   RawEvent
   (mappend [e1 e2] (join e1 e2))

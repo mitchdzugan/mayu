@@ -1,3 +1,15 @@
+.fixed {
+    position: fixed;
+    top: 40px;
+    left: calc(50vw - 150px);
+    height: 200px;
+    width: 300px;
+}
+
+.fixed .uk-card-default {
+		background: #e0e0e0;
+}
+
 .body-container {
   font-family: 'Helvetica Neue', Verdana, Helvetica, Arial, sans-serif;
   max-width: 640px;

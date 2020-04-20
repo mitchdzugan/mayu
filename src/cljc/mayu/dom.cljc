@@ -191,3 +191,6 @@
                         (fn [_] (use-mdom (:mdom writer))))]
     (use-mdom (:mdom writer))
     {:off off :result (:result result)}))
+
+(defnm when [b m]
+  (w/whenm b m))

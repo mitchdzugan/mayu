@@ -139,9 +139,7 @@
          [(swap! binds #(-> %1
                             (assoc-in [path :used?] true)
                             (assoc-in [path :state] bind)))]
-         s-exec <- (s/map #(do (println [:SIGS (count @(:signals bind))])
-                               (println [:BNDS (count @(:binds bind))])
-                               (swap! (:signals bind) reset-used)
+         s-exec <- (s/map #(do (swap! (:signals bind) reset-used)
                                (swap! (:binds bind) reset-used)
                                (let [res (->> (w/local (curry merge bind) (f %1))
                                               (w/exec {:init-writer init-writer

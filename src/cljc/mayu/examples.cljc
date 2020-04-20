@@ -135,6 +135,25 @@
     <[li "will"]
     <[dom/unstash stashed]])
 
+(defui offs-test []
+  <[dom/collect-and-reduce ::score #(+ %1 %2) 0 $=
+    [(println "Rendering Component Top Level")]
+    s-score <- (dom/envs ::score)
+    <[dom/bind s-score $[score]=
+      <[dom/keyed score $=
+        <[dom/collect-and-reduce ::score2 #(+ %1 %2) 0 $=
+          <[button "Inc scores"] btn >
+          (dom/emit ::score2 (e/map (varg# 1) (dom/on-click btn)))
+          s-score2 <- (dom/envs ::score2)
+          <[dom/bind s-score2 $[score2]=
+            s-timer <- (s/reduce inc 0 (e/timer 300))
+            <[dom/bind s-timer $[timer]=
+              <[p (str timer)]]
+            <[div (str "Score2: " score2)]]]]
+      <[change-score-button 1]>
+      <[score-display score]
+      <[change-score-button -1]>]])
+
 (defui my-ui []
-  <[stash-demo2])
+  <[offs-test])
 

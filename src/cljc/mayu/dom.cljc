@@ -1,6 +1,6 @@
 (ns mayu.dom
-  (:require [allpa.core
-             :refer [curry]]
+  (:require [allpa.core :as a
+             :refer [curry varg#]]
             [mayu.frp.event :as e]
             [mayu.frp.signal :as s]
             [mayu.async
@@ -105,6 +105,27 @@
                                                   [{:res res :e e}]))
                [[res (curry update :events #(dissoc %1 k))]])))
 
+(defn reset-used [m]
+  (a/map-values (varg# (assoc %1 :used? false)) m))
+
+(defn check-used [off]
+  (fn [m]
+    (let [reducer (fn [agg id item]
+                    (if (:used? item)
+                      (assoc agg id item)
+                      (do (off item)
+                          agg)))]
+      (reduce-kv reducer {} m))))
+
+(defn off-bind [{{:keys [memos signals binds]} :state :as bind}]
+  (reset! memos {})
+  (doseq [[_ {:keys [off]}] @signals]
+    (off))
+  (reset! signals {})
+  (doseq [[_ bind] @binds]
+    (off-bind bind))
+  (reset! binds {}))
+
 (defnm bind [s f]
   (step ::bind
         (mdo
@@ -112,16 +133,24 @@
          path <- curr-path
          {:keys [binds] :as reader} <- w/ask
          let [bind (or (get-in @binds [path :state])
-                       {:offs (atom '())
-                        :memos (atom {})
+                       {:memos (atom {})
                         :signals (atom {})
                         :binds (atom {})})]
          [(swap! binds #(-> %1
                             (assoc-in [path :used?] true)
                             (assoc-in [path :state] bind)))]
-         s-exec <- (s/map #(->> (w/local (curry merge bind) (f %1))
-                                (w/exec {:init-writer init-writer
-                                         :reader reader}))
+         s-exec <- (s/map #(do (println [:SIGS (count @(:signals bind))])
+                               (println [:BNDS (count @(:binds bind))])
+                               (swap! (:signals bind) reset-used)
+                               (swap! (:binds bind) reset-used)
+                               (let [res (->> (w/local (curry merge bind) (f %1))
+                                              (w/exec {:init-writer init-writer
+                                                       :reader reader}))]
+                                 (swap! (:signals bind)
+                                        (check-used (fn [{:keys [off]}] (off))))
+                                 (swap! (:binds bind)
+                                        (check-used off-bind))
+                                 res))
                           s)
          s-writer <- (s/map :writer s-exec)
          s-events <- (s/map :events s-writer)
@@ -179,7 +208,6 @@
                                :step-fn step
                                :active-signal active-signal
                                :set-active set-active
-                               :offs (atom '())
                                :signals (atom {})
                                :binds (atom {})
                                :memos (atom {})

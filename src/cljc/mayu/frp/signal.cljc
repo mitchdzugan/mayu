@@ -1,6 +1,10 @@
 (ns mayu.frp.signal
-  (:require [wayra.core :as w
+  (:require [allpa.core
+             :refer [varg#]]
+            [wayra.core :as w
              :refer [defnm defm mdo]]
+            #?(:clj [clojure.core :as core]
+               :cljs [cljs.core :as core])
             [mayu.frp.event :as e]))
 
 (defn off! [s] ((:off! s)))
@@ -76,3 +80,9 @@
              reader <- w/ask
              let [i (if active (inst! active) i-arg)]
              (raw-from i (e/reduce r i e)))))
+
+(defnm zip-with [f & sigs]
+  (step ::zip-with
+        (mdo let [e-changed (apply e/join-skip-siblings (core/map changed sigs))
+                  val! (varg# (apply f (core/map inst! sigs)))]
+             (raw-from (val!) (e/map val! e-changed)))))

@@ -10,6 +10,7 @@
                  [org.clojure/core.async "1.1.587"]
                  [net.cgrand/macrovich "0.2.1"]
                  [cljsjs/snabbdom "0.7.4-0"]
+                 [prone "2020-01-17"]
                  [ring-server "0.5.0"]
                  [reagent "0.10.0"]
                  [reagent-utils "0.3.3"]

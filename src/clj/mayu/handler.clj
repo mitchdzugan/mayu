@@ -1,7 +1,11 @@
 (ns mayu.handler
   (:require
    [reitit.ring :as reitit-ring]
-   [mayu.middleware :refer [middleware]]
+   [ring.middleware.content-type :refer [wrap-content-type]]
+   [ring.middleware.params :refer [wrap-params]]
+   [prone.middleware :refer [wrap-exceptions]]
+   [ring.middleware.reload :refer [wrap-reload]]
+   [ring.middleware.defaults :refer [site-defaults wrap-defaults]]
    [hiccup.page :refer [include-js include-css html5]]
    [config.core :refer [env]]))
 
@@ -32,6 +36,11 @@
   {:status 200
    :headers {"Content-Type" "text/html"}
    :body (loading-page)})
+
+(def middleware
+  [#(wrap-defaults % site-defaults)
+   wrap-exceptions
+   wrap-reload])
 
 (def app
   (reitit-ring/ring-handler

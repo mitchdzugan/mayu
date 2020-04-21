@@ -10,11 +10,17 @@
             #?(:clj [clojure.pprint :refer [pprint]]
                :cljs [cljs.pprint :refer [pprint]])))
 
-(defrecord Val [val deps])
+(defrecord Push [val src count])
+(defrecord Src [src count])
 (defrecord Deps [deps])
-(defrecord Off [])
 
-(def all-events (atom {}))
+(def global-push-counts (atom {}))
+
+(defn global-count [id]
+  (get @global-push-counts id 0))
+
+(defn init-dep-counts [deps]
+  (reduce #(assoc %1 %2 (global-count %2)) {} deps))
 
 (defrecord RawEvent [state])
 
@@ -24,6 +30,7 @@
 
 (defn never? [e] (= 0 (:id @(:state e))))
 
+;; TODO make deps arg a function that returns deps on-required
 (defn Event
   ([] (Event (fn [_] (fn [])) nil))
   ([on-required] (Event on-required nil))
@@ -36,23 +43,27 @@
                         :on-required on-required
                         :off-callback (fn [])
                         :source? (nil? deps)
-                        :deps (or deps {id 1})
+                        :deps (or deps [id])
                         :pushes 1
                         :on? false
                         :num-awaiting 0
                         :awaiting-on (chan)})))))
 
-(defprotomethod val? [_] Val true [Deps Off] false)
+(defprotomethod push? [_] Push true [Src Deps] false)
+(defprotomethod deps? [_] Deps true [Push Src] false)
 
 (defn send! [e msg]
   (when (not (never? e))
     (let [{:keys [state]} e
           {:keys [subs on? num-awaiting awaiting-on deps]} @state
-          {new-deps :deps} msg]
+          {new-deps :deps :keys [src count]} msg]
       (if on?
-        (when (or (val? msg)
-                  (not= deps new-deps))
-          (swap! state #(assoc %1 :deps new-deps))
+        (when (or (and (not (deps? msg))
+                       (= count (global-count src)))
+                  (and (deps? msg)
+                       (not= deps new-deps)))
+          (when (deps? msg)
+            (swap! state #(assoc %1 :deps new-deps)))
           (doseq [on (vals subs)]
             (on msg)))
         (do (swap! state #(update %1 :num-awaiting inc))
@@ -62,7 +73,6 @@
 (defn on! [e]
   (let [{:keys [state]} e
         {:keys [on? awaiting-on num-awaiting id]} @state]
-    (swap! all-events #(assoc %1 id state))
     (when (and (not (never? e)) (not on?))
       (swap! state (curry assoc :on? true))
       (go-loop [left num-awaiting
@@ -76,40 +86,37 @@
               (send! e (get msgs id)))))))
     e))
 
-(defn off! [e]
-  (when (not (never? e))
-    (let [{:keys [state]} e
-          {:keys [subs on? num-awaiting awaiting-on]} @state]
-      (doseq [on (vals subs)]
-        (on (->Off)))
-      (swap! state (curry merge {:id 0 :subs nil :awaiting-on nil})))))
-
 (defn push! [e val]
   (let [{:keys [state]} e
-        {:keys [id pushes source?]} @state]
+        {:keys [id pushes source?]} @state
+        new-pushes (inc pushes)]
     (when (not source?)
       (throw (a/Err "Can only push to source event types")))
-    (swap! state (curry update :pushes inc))
-    (send! e (->Val val {id (inc pushes)}))))
+    (when (global-count id)
+      (swap! global-push-counts (curry assoc id new-pushes)))
+    (swap! state (curry assoc :pushes new-pushes))
+    (send! e (->Push val id new-pushes))))
 
 (defn subscribe! [e on]
   (if (never? e)
     (fn [])
     (let [{:keys [state]} e
-          {:keys [next-sub-id on-required]} @state
+          {:keys [next-sub-id on-required id pushes]} @state
           sub-count (fn [] (count (:subs @state)))]
       (swap! state #(-> %1
                        (assoc :next-sub-id (inc next-sub-id))
                        (assoc-in [:subs next-sub-id] on)))
       (when (= 1 (sub-count))
+        (swap! global-push-counts #(assoc %1 id pushes))
         (swap! state (curry assoc :off-callback (on-required #(send! e %1)))))
       (fn []
         (swap! state (curry update :subs #(dissoc %1 next-sub-id)))
         (when (= 0 (sub-count))
+          (swap! global-push-counts #(dissoc %1 id))
           ((:off-callback @state)))))))
 
 (defn consume! [e on] (subscribe! e (fn [msg]
-                                      (when (val? msg) (on (:val msg))))))
+                                      (when (push? msg) (on (:val msg))))))
 
 
 (defn shadow [e]
@@ -117,16 +124,16 @@
     never
     (on! (Event
           #(subscribe! e (fn [msg]
-                           (when (val? msg)
-                             (% (assoc msg :deps {})))))
-          {}))))
+                           (when (push? msg)
+                             (% (merge msg {:src ::none :count 0})))))
+          []))))
 
 (defn map [f e]
   (if (never? e)
     never
     (on! (Event
           #(subscribe! e (fn [msg]
-                           (% (if (val? msg)
+                           (% (if (push? msg)
                                 (update msg :val f)
                                 msg))))
           (:deps @(:state e))))))
@@ -139,7 +146,7 @@
     (let [a-acc (atom i)]
       (on! (Event
             #(subscribe! e (fn [{:keys [val] :as msg}]
-                             (if (val? msg)
+                             (if (push? msg)
                                (do (swap! a-acc (fn [acc] (r acc val)))
                                    (% (assoc msg :val @a-acc)))
                                (% msg))))
@@ -150,94 +157,89 @@
     never
     (on! (Event
           #(subscribe! e
-                       (fn [{:keys [val deps] :as msg}]
-                         (cond (and (val? msg)
-                                    (not (p val))) (% (->Deps deps))
+                       (fn [{:keys [val src count] :as msg}]
+                         (cond (and (push? msg)
+                                    (not (p val))) (% (->Src src count))
                                :else (% msg))))
           (:deps @(:state e))))))
 
-(defn to-deps [dep-data]
-  (a/map-values (fn [id-data _] (apply min (-> id-data :counts vals)))
-                @dep-data))
+(def val? nil)
 
-(defn process-message [dep-data log? send-self! e-src]
-  (fn [msg]
-    (let [{:keys [id]} @(:state e-src)
-          {:keys [type val deps]} msg
-          awaiting (atom 1)
+(defn join-to-deps [dep-data]
+  (->> @dep-data vals (core/reduce merge {}) keys))
 
-          dec-awaiting
-          (fn [sent-sibling?]
-            (swap! awaiting dec)
-            (if (= 0 @awaiting)
-              (do
-                (send-self! (-> msg
-                                (assoc :deps (to-deps dep-data))
-                                (assoc :val {:sent-sibling? sent-sibling?
-                                             :val val})))
-                (or sent-sibling? (val? msg)))
-              sent-sibling?))
+(defn process-message [& args])
 
-          prev (to-deps dep-data)]
-      (doseq [[dep-id count] deps]
-        (swap! dep-data #(assoc-in %1 [dep-id :counts id] count)))
-      (when log?
-        (pprint {:dep-data @dep-data
-                 :id id
-                 :msg-deps deps
-                 :type type
-                 :val val
-                 })
-        ; (pprint (:deps @(or (get @all-events 196) (atom {}))))
-        )
-      (let [curr (to-deps dep-data)]
-        (doseq [[dep-id count] deps]
-          (cond
-            (and (< (get prev dep-id count) count)
-                 (< (get curr dep-id) count))
-            (do (swap! awaiting inc)
-                (when (val? msg)
-                  (swap! dep-data (curry update-in [dep-id :stashed]
-                                         #(conj %1 {:dec dec-awaiting
-                                                    :id id})))))
-            (< (get prev dep-id count) count)
-            (do (core/reduce #((:dec %2) %1) (val? msg)
-                             (get-in @dep-data [dep-id :stashed]))
-                (swap! dep-data #(assoc-in %1 [dep-id :stashed] '()))))))
-      (dec-awaiting false))))
+(defprotomethod on-join-message [msg dep-data stashes send-self! e]
+  Deps
+  (let [{:keys [deps]} msg
+        {:keys [id]} @(:state e)
+        dep-counts (init-dep-counts deps)]
+    (doseq [[src count] dep-counts]
+      (let [stashed (get-in @stashes [src count])]
+        (when (and (not (empty? stashed))
+                   (->> @dep-data
+                        vals
+                        (every? #(= (get %1 src count) count))))
+          (swap! stashes #(dissoc %1 src))
+          (core/reduce #(%2 %1) false stashed))))
+    (swap! dep-data #(assoc id dep-counts))
+    (send-self! (->Deps (join-to-deps dep-data))))
+
+  [Push Src]
+  (let [{:keys [val src count]} msg
+        {:keys [id]} @(:state e)]
+    (if (= ::none src)
+      (send-self! msg)
+      (let [sendable? (->> (dissoc @dep-data id)
+                           vals
+                           (every? #(= (get %1 src count) count)))
+            stashed (get-in @stashes [src count])]
+        (swap! dep-data #(assoc-in %1 [id src] count))
+        (cond
+          sendable?
+          (do (swap! stashes #(dissoc %1 src))
+              (when (or (empty? stashed)
+                        (push? msg))
+                (send-self! (merge msg {:val {:sent-sibling? false
+                                              :val val}})))
+              (core/reduce #(%2 %1) (push? msg) stashed))
+
+          (push? msg)
+          (let [send! #(do (send-self! (merge msg {:val {:sent-sibling? %1
+                                                         :val val}}))
+                           true)]
+            (swap! stashes #(update-in %1 [src count] (curry conj send!)))))))))
 
 (defn raw-join [& arg-events]
   (let [events (remove never? arg-events)
 
-        reset-dep-data!
-        (fn [events dep-data]
-          (reset! dep-data
-                  (core/reduce (fn [data e]
-                                 (let [{:keys [id deps]} @(:state e)]
-                                   (reduce-kv #(assoc-in %1 [%2 :counts id] %3)
-                                              data
-                                              deps)))
-                               {}
-                               events)))
         on-required
-        (fn [events dep-data send-self!]
-          (let [offs (-> #(subscribe! %1 (process-message dep-data
-                                                          false
-                                                          send-self!
-                                                          %1))
-                         (core/map events)
-                         vec)]
+        (fn [events dep-data stashes send-self!]
+          (let [offs
+                (-> #(subscribe! %1 (curry on-join-message
+                                           dep-data
+                                           stashes
+                                           send-self!
+                                           %1))
+                    (core/map events)
+                    vec)]
             (fn []
               (reset! dep-data {})
+              (reset! stashes {})
               (doseq [off offs] (off)))))
 
         perform-join
         (fn [events]
-          (let [dep-data (atom {})]
-            (reset-dep-data! events dep-data)
-            (on! (Event #(on-required events dep-data %1)
-                        (to-deps dep-data)))))]
-
+          (let [init-dep-data
+                (core/reduce #(let [{:keys [id deps]} @(:state %2)]
+                                (assoc %1 id (init-dep-counts deps)))
+                             {}
+                             events)
+                stashes (atom {})
+                dep-data (atom init-dep-data)]
+            (on! (Event #(on-required events dep-data stashes %1)
+                        (join-to-deps dep-data)))))]
     (case (count events)
       0 never
       1 (map #(-> {:val %1 :sent-sibling? false}) (first events))
@@ -250,75 +252,144 @@
        (filter (comp not :sent-sibling?))
        (map :val)))
 
-(defn raw-flat-map [f e]
+(comment "
+outer-event:
+    Deps:
+        reset deps,     :TODO maybe should wait until empty stash?
+        clear stashed,
+        send new deps,
+    [Push, Src]:
+        update deps
+        send msg
+
+inner-event:
+    Deps:
+    Push:
+        outer-updateed?
+            off
+            set-curr
+            send deps
+            send src
+        :else
+            stash switch
+    Src:
+        outer-updated? send!
+        :else skip
+")
+
+(defn flat-map [f e]
   (if (never? e)
     never
     (let [curr-off (atom (fn []))
           full-off (atom (fn []))
-          curr-id (atom nil)
-          {:keys [id]} @(:state e)
-          dep-data (atom {})
+          {:keys [id deps]} @(:state e)
+          inner-deps (atom {})
+          outer-deps (atom (init-dep-counts deps))
+          inner-stashes (atom {})
+          outer-stashes (atom {})
 
-          reset-dep-data!
-          (fn []
-            (reset! dep-data (reduce-kv #(assoc-in %1 [%2 :counts id] %3)
-                                        {}
-                                        (:deps @(:state e)))))
+          to-deps
+          (fn [] (->> (merge @inner-deps @outer-deps)
+                      keys))
 
-          process-val
-          (fn [send-self! {:keys [val] :as msg}]
-            (let [e-next (f val)
-                  next @(:state e-next)
-                  next-id (:id next)]
-              (doseq [[dep-id data] @dep-data]
-                (swap! dep-data (fn [curr-data]
-                                  (-> curr-data
-                                      (update-in [dep-id :stashed]
-                                                 (partial remove
-                                                          #(= @curr-id
-                                                              (:id %1))))
-                                      (update-in [dep-id :counts]
-                                                 #(dissoc %1 @curr-id))))))
-              (swap! dep-data #(into {} (core/filter (fn [[_ data]]
-                                                       (not= 0 (+ (count (:counts data))
-                                                                  (count (:stashed data)))))
-                                                     %1)))
-              (reset! curr-id next-id)
-              (@curr-off)
-              ((process-message dep-data true send-self! e)
-               (->Deps (:deps msg)))
-              (reset! curr-off
-                      (subscribe! e-next
-                                  (process-message dep-data
-                                                   false
-                                                   send-self!
-                                                   e-next)))))]
-      (reset-dep-data!)
+          process-inner
+          (fn [send-self! {:keys [val src count deps] :as msg}]
+            (cond
+              (= ::none src)
+              (send-self! msg)
+
+              (deps? msg)
+              (do (reset! inner-deps (init-dep-counts deps))
+                  (send-self! (->Deps (to-deps)))
+                  (doseq [[_ stashes] @outer-stashes]
+                    ((get stashes (apply max (keys stashes)))))
+                  (reset! outer-stashes {}))
+
+              :else
+              (do (swap! inner-deps #(assoc %1 src count))
+                  (cond
+                    (= (get @outer-deps src count) count)
+                    (let [stashed (get-in @outer-stashes [src count])]
+                      (when (or (push? msg)
+                                (empty? stashed))
+                        (send-self! msg))
+                      (doseq [send! stashed]
+                        (send!))
+                      (swap! outer-stashes #(dissoc %1 src)))
+
+                    (push? msg)
+                    (swap! inner-stashes
+                           (curry update-in [src count]
+                                  #(conj %1 (fn [] (send-self! msg)))))))))
+
+          process-outer
+          (fn [send-self! {:keys [val src count deps] :as msg}]
+            (cond
+              (push? msg)
+              (let [e-next (f val)
+                    send!
+                    (fn []
+                      (@curr-off)
+                      (reset! curr-off
+                              (subscribe! e-next #(process-inner send-self! %1)))
+                      (reset! inner-deps
+                              (init-dep-counts (:deps @(:state e-next))))
+                      (when (empty? (get-in @inner-stashes [src count]))
+                        (send-self! (->Src src count)))
+                      (send-self! (->Deps (to-deps)))
+                      (doseq [[_ stashes] @outer-stashes]
+                        ((get stashes (apply max (keys stashes)))))
+                      (reset! outer-stashes {}))]
+                (when-not (= ::none src)
+                  (swap! outer-deps #(assoc %1 src count)))
+                (cond
+                  (= (get @inner-deps src count) count)
+                  (let [stashed (get-in @inner-stashes [src count])]
+                    (send!)
+                    (doseq [send! stashed]
+                      (send!))
+                    (swap! inner-stashes #(dissoc %1 src)))
+
+                  :else
+                  (swap! outer-stashes
+                         (curry update-in [src count]
+                                #(conj %1 send!)))))
+
+              (deps? msg)
+              (do (reset! outer-deps (init-dep-counts deps))
+                  (send-self! (->Deps (to-deps)))
+                  (doseq [[_ stashes] @inner-stashes]
+                    ((get stashes (apply max (keys stashes)))))
+                  (reset! inner-stashes {}))
+
+              :else
+              (do (swap! outer-deps #(assoc %1 src count))
+                  (let [stashed (get-in @inner-stashes [src count])]
+                    (when (= (get @inner-deps src count) count)
+                      (swap! inner-stashes #(dissoc %1 src))
+                      (when (empty? stashed)
+                        (send-self! msg))
+                      (doseq [send! stashed]
+                        (send!)))))))]
       (on! (Event
             (fn [send-self!]
-              (reset! full-off
-                      (subscribe! e (fn [msg]
-                                      (if (val? msg)
-                                        (process-val send-self! msg)
-                                        ((process-message dep-data
-                                                          false
-                                                          send-self!
-                                                          e) msg)))))
+              (reset! full-off (subscribe! e #(process-outer send-self! %1)))
               (fn []
                 (@curr-off)
                 (@full-off)
-                (reset! dep-data {})
+                (reset! inner-deps {})
+                (reset! outer-deps {})
+                (reset! inner-stashes {})
+                (reset! inner-stashes {})
                 (reset! curr-off (fn []))
                 (reset! full-off (fn []))))
-            (to-deps dep-data))))))
-
-(defn flat-map [f e] (map :val (raw-flat-map f e)))
+            (to-deps))))))
 
 (defn flatten [ee] (flat-map identity ee))
 
 (defn on-preempted [init-id send-self!]
   (fn [msg]
-    (when (not (nil? (get-in msg [:deps init-id])))
+    (when (= init-id (get msg :src))
       (throw (a/Err "Resursive Event Encountered")))
     (send-self! msg)))
 
@@ -335,10 +406,10 @@
                                (quick-off)
                                (>! off-channel off)))
                          (fn [] (go ((<! off-channel)))))
-                       {})
+                       [])
          res (f e-init)
          e (from-res res)
-         ;; TODO this is a hack but Im not sure why
+         ;; TODO this is a hack but Im not sure why its needed
          quick-off (consume! e (fn [_]))]
      (on! e-init)
      (swap! (:state e) #(merge %1 {:awaiting-on (chan) :on? false}))
@@ -369,7 +440,7 @@
 
 (defn throttle [e ms]
   (let [sender (atom (fn [_]))
-        send! (fn [{:keys [val]}] (@sender (->Val val {})))
+        send! (fn [{:keys [val]}] (@sender (->Push val ::none 0)))
         throttling (atom false)
         queued (atom [])]
     (on!
@@ -378,7 +449,7 @@
               (let [off
                     (subscribe! e
                                 (fn [msg]
-                                  (when (val? msg)
+                                  (when (push? msg)
                                     (if @throttling
                                       (reset! queued [msg])
                                       (do (reset! throttling true)
@@ -391,34 +462,34 @@
                                                   (recur))
                                               (reset! throttling false))))))))]
                 (fn [] (off) (reset! sender (fn [_])))))
-            {}))))
+            []))))
 
 (defn defer [e ms]
   (let [sender (atom (fn [_]))
-        send! (fn [{:keys [val]}] (@sender (->Val val {})))]
+        send! (fn [{:keys [val]}] (@sender (->Push val ::none 0)))]
     (on!
      (Event (fn [send-self!]
               (reset! sender send-self!)
               (let [off
                     (subscribe! e
                                 (fn [msg]
-                                  (when (val? msg)
+                                  (when (push? msg)
                                     (go (<! (timeout ms))
                                         (send! msg)))))]
                 (fn [] (off) (reset! sender (fn [_])))))
-            {}))))
+            []))))
 (defn timer [ms]
   (let [c (chan 1)]
     (on! (Event #(do (go (>! c :on))
                      (go-loop []
                        (let [msg (<! c)]
                          (when (not= :off msg)
-                           (%1 (->Val :on {}))
+                           (%1 (->Push :on ::none 0))
                            (<! (timeout ms))
                            (>! c :on)
                            (recur))))
                      (fn [] (go (>! c :off))))
-                {}))))
+                []))))
 
 (extend-protocol Monoid
   RawEvent

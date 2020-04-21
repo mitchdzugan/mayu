@@ -3,7 +3,7 @@
              [clojure.core.async :refer :all]
              [allpa.core
               :refer [curry]]
-             [mayu.frp.event3 :as e]))
+             [mayu.frp.event :as e]))
 
 (deftest events
   (testing "push/consume/off"

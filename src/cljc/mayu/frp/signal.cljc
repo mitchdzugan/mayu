@@ -9,7 +9,6 @@
 
 (defn off! [s] ((:off! s)))
 (defn inst! [s] ((:inst! s)))
-(defn on! [s] ((:on! s)))
 (defn hot-swap! [s e] ((:hot-swap! s) e))
 (def changed :changed)
 (defn consume! [s f] ((:consume! s) f))
@@ -35,23 +34,19 @@
    active <- active-signal
    active --> [(hot-swap! active e-arg)
                active]
-   let [changed (e/on! (e/Event))
+   let [e-internal (e/on! (e/Event))
         sval (atom init)
-        e (atom e-arg)
-        eoff (atom nil)
-        on! (fn []
-              (reset! eoff
-                      (e/consume! @e #(when (not= @sval %1)
-                                        (reset! sval %1)
-                                        (e/push! changed %1)))))]
-   [(on!)
-    {:off! (fn [] (@eoff))
+        changed (->> e-internal
+                     e/flatten
+                     (e/filter #(not= %1 @sval))
+                     (e/map #(do (reset! sval %1)
+                                 %1)))
+        off! (e/consume! changed (fn [x]))]
+   [(e/push! e-internal e-arg)
+    {:off! off!
      :inst! (fn [] @sval)
-     :on! on!
      :hot-swap! (fn [e-next]
-                  (@eoff)
-                  (reset! e e-next)
-                  (on!))
+                  (e/push! e-internal e-next))
      :changed changed
      :consume! (fn [f]
                  (f @sval)
@@ -69,7 +64,7 @@
      :signal result}))
 
 (defn unwrap-event [se]
-  (e/join (inst! se) (e/flatten (changed se))))
+  (e/join-skip-siblings (inst! se) (e/flatten (changed se))))
 
 (defn map [f s]
   (step ::map (raw-from (f (inst! s)) (e/map f (changed s)))))

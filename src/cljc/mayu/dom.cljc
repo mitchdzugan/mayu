@@ -72,8 +72,8 @@
                            (-> #(let [handler (fn [dom-event]
                                                 (%1 (e/->Val dom-event {})))]
                                   (.addEventListener el target handler)
-                                  (fn []
-                                    (.removeEventListener el target handler)))
+                                  [(fn []
+                                     (.removeEventListener el target handler))])
                                e/Event
                                e/on!
                                e/defer-off)]

@@ -10,11 +10,14 @@
             #?(:clj [clojure.pprint :refer [pprint]]
                :cljs [cljs.pprint :refer [pprint]])))
 
-(defrecord Val [val deps])
+(defrecord Push [val src count])
+(defrecord Src [src count])
 (defrecord Deps [deps])
-(defrecord Off [])
 
-(def all-events (atom {}))
+(def global-push-counts (atom {}))
+
+(defn init-dep-counts [deps]
+  (reduce #(assoc %1 %2 (get @global-push-counts %2 0)) {} deps))
 
 (defrecord RawEvent [state])
 
@@ -36,13 +39,13 @@
                         :on-required on-required
                         :off-callback (fn [])
                         :source? (nil? deps)
-                        :deps (or deps {id 1})
+                        :deps (or deps [id])
                         :pushes 1
                         :on? false
                         :num-awaiting 0
                         :awaiting-on (chan)})))))
 
-(defprotomethod val? [_] Val true [Deps Off] false)
+(defprotomethod push? [_] Push true [Src Deps] false)
 
 (defn send! [e msg]
   (when (not (never? e))
@@ -76,21 +79,15 @@
               (send! e (get msgs id)))))))
     e))
 
-(defn off! [e]
-  (when (not (never? e))
-    (let [{:keys [state]} e
-          {:keys [subs on? num-awaiting awaiting-on]} @state]
-      (doseq [on (vals subs)]
-        (on (->Off)))
-      (swap! state (curry merge {:id 0 :subs nil :awaiting-on nil})))))
-
 (defn push! [e val]
   (let [{:keys [state]} e
-        {:keys [id pushes source?]} @state]
+        {:keys [id pushes source?]} @state
+        new-pushes (inc pushes)]
     (when (not source?)
       (throw (a/Err "Can only push to source event types")))
-    (swap! state (curry update :pushes inc))
-    (send! e (->Val val {id (inc pushes)}))))
+    (swap! global-push-counts (curry assoc id new-pushes))
+    (swap! state (curry assoc :pushes new-pushes))
+    (send! e (->Push val id new-pushes))))
 
 (defn subscribe! [e on]
   (if (never? e)

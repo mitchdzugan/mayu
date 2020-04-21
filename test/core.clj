@@ -96,7 +96,17 @@
                         [:e3 3]
                         [:e2 4]
                         [:e2 5]]))))
-  #_(testing "join"
+  (testing "join"
+    (let [a (atom 0)
+          consumed (atom 0)
+          e1 (e/on! (e/Event))
+          e2 (e/map (fn [_] (swap! a inc)) e1)
+          e3 (e/join-skip-siblings e1 e2)
+          e4 (e/map (fn [_] @a) e3)
+          off (e/consume! e4 (fn [v] (reset! consumed v)))]
+      (e/push! e1 nil)
+      (off)
+      (is (= 1 @consumed)))
     (let [e1 (e/on! (e/Event))
           e2 (->> e1
                   (e/filter #(< %1 6))
@@ -117,7 +127,7 @@
       (e/push! e1 5)
       (e/push! e1 6)
       (off)
-      (is (= @consumed [[1 :e2]
+      (is (= @consumed [[1 :e4]
                         [2 :e4]
                         [3 :e3]
                         [4 :e3]
@@ -142,8 +152,8 @@
       (e/push! e1 5)
       (e/push! e1 6)
       (off)
-      (is (= @consumed [[1 :e2]
-                        [1 :e3]
+      (is (= @consumed [[1 :e3]
+                        [1 :e2]
                         [1 :e4]
                         [2 :e3]
                         [2 :e2]

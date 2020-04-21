@@ -1,6 +1,8 @@
 (ns mayu.async
   #?(:clj (:require [net.cgrand.macrovich :as macros]
-                    [clojure.core.async])
+                    [clojure.core.async]
+                    [clojure.walk
+                     :refer [postwalk]])
      :cljs (:require [cljs.core.async]))
   #?(:cljs (:require-macros [cljs.core.async]
                             [mayu.async :refer [go go-loop alt!]])))
@@ -8,12 +10,40 @@
 #?(:clj
    (defmacro go [& forms]
      `(~(macros/case :clj 'clojure.core.async/go
-                     :cljs 'cljs.core.async/go) ~@forms)))
+                     :cljs 'cljs.core.async/go)
+       ~@(macros/case :clj (postwalk (fn [form]
+                                       (cond
+                                         (and (symbol? form)
+                                              (= "<!" (name form)))
+                                         'clojure.core.async/<!
+                                         (and (symbol? form)
+                                              (= ">!" (name form)))
+                                         'clojure.core.async/>!
+                                         (and (symbol? form)
+                                              (= "alt!" (name form)))
+                                         'clojure.core.async/alt!
+                                         :else form))
+                                     forms)
+                      :cljs forms))))
 
 #?(:clj
    (defmacro go-loop [& forms]
      `(~(macros/case :clj 'clojure.core.async/go-loop
-                     :cljs 'cljs.core.async/go-loop) ~@forms)))
+                     :cljs 'cljs.core.async/go-loop)
+       ~@(macros/case :clj (postwalk (fn [form]
+                                       (cond
+                                         (and (symbol? form)
+                                              (= "<!" (name form)))
+                                         'clojure.core.async/<!
+                                         (and (symbol? form)
+                                              (= ">!" (name form)))
+                                         'clojure.core.async/>!
+                                         (and (symbol? form)
+                                              (= "alt!" (name form)))
+                                         'clojure.core.async/alt!
+                                         :else form))
+                                     forms)
+                      :cljs forms))))
 
 #?(:clj
    (defmacro alt! [& forms]

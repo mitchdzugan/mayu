@@ -41,7 +41,10 @@
                      (e/filter #(not= %1 @sval))
                      (e/map #(do (reset! sval %1)
                                  %1)))
-        off! (e/consume! changed (fn [x]))]
+        off! (let [unsub (e/consume! changed (fn [x]))]
+               (fn []
+                 (unsub)
+                 (e/off! changed)))]
    [(e/push! e-internal e-arg)
     {:off! off!
      :inst! (fn [] @sval)

@@ -98,10 +98,12 @@
   (w/tell {:events {k e}}))
 
 (defnm collect [k mf]
-  (w/pass #(assoc-in %1 [:events k] e/never)
+  (w/pass #(assoc-in %1 [:events k] [])
           (mdo {:keys [res]} <- (w/preemptm e/preempt :e
                                             #(mdo [res w] <- (w/listen (mf %1))
-                                                  let [e (get-in w [:events k])]
+                                                  let [e (->> [:events k]
+                                                              (get-in w)
+                                                              (apply e/join))]
                                                   [{:res res :e e}]))
                [[res (curry update :events #(dissoc %1 k))]])))
 
@@ -131,7 +133,7 @@
         (mdo
          init-writer <- w/erased
          path <- curr-path
-         {:keys [binds] :as reader} <- w/ask
+         {:keys [binds signals] :as reader} <- w/ask
          let [bind (or (get-in @binds [path :state])
                        {:memos (atom {})
                         :signals (atom {})
@@ -139,6 +141,7 @@
          [(swap! binds #(-> %1
                             (assoc-in [path :used?] true)
                             (assoc-in [path :state] bind)))]
+         s-shadowed <- (s/from (s/inst! s) (e/shadow (s/changed s)))
          s-exec <- (s/map #(do (swap! (:signals bind) reset-used)
                                (swap! (:binds bind) reset-used)
                                (let [res (->> (w/local (curry merge bind) (f %1))
@@ -149,7 +152,7 @@
                                  (swap! (:binds bind)
                                         (check-used off-bind))
                                  res))
-                          s)
+                          s-shadowed)
          s-writer <- (s/map :writer s-exec)
          s-events <- (s/map :events s-writer)
          s-result <- (s/map :result s-exec)
@@ -157,8 +160,10 @@
          (w/tell {:mdom (->MBind s-mdom)})
          (emit ::request-render (e/shadow (s/changed s-mdom)))
          (w/eachm (keys (:events init-writer))
-                  #(step %1 (mdo s-event <- (s/map %1 s-events)
-                                 (emit %1 (e/shadow (s/unwrap-event s-event))))))
+                  #(step %1 (mdo s-event <- (s/map (fn [events]
+                                                     (apply e/join (%1 events)))
+                                                   s-events)
+                                 (emit %1 (s/unwrap-event s-event)))))
          [s-result])))
 
 (defnm memo [via m]

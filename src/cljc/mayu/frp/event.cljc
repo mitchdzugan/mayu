@@ -98,6 +98,11 @@
               (send! e (get msgs id)))))))
     e))
 
+(defn off! [e]
+  (when (not (never? e))
+    (let [{:keys [state]} e]
+      (swap! state (curry merge {:id 0 :subs nil :awaiting-on nil})))))
+
 (defn push! [e val]
   (let [{:keys [state]} e
         {:keys [id pushes source?]} @state
@@ -263,31 +268,6 @@
   (->> (apply raw-join events)
        (filter (comp not :sent-sibling?))
        (map :val)))
-
-(comment "
-outer-event:
-    Deps:
-        reset deps,     :TODO maybe should wait until empty stash?
-        clear stashed,
-        send new deps,
-    [Push, Src]:
-        update deps
-        send msg
-
-inner-event:
-    Deps:
-    Push:
-        outer-updateed?
-            off
-            set-curr
-            send deps
-            send src
-        :else
-            stash switch
-    Src:
-        outer-updated? send!
-        :else skip
-")
 
 (defn flat-map [f e]
   (if (never? e)

@@ -55,11 +55,23 @@
 (defn send! [e msg]
   (when (not (never? e))
     (let [{:keys [state]} e
-          {:keys [subs on? num-awaiting awaiting-on deps]} @state
-          {new-deps :deps :keys [src count]} msg]
+          {:keys [subs on? num-awaiting awaiting-on deps id pushes]} @state
+          {new-deps :deps :keys [src count]} msg
+          original-src src
+          src (if (= original-src ::self) id src)
+          count (if (= original-src ::self) (inc pushes) count)
+          msg (if (= original-src ::self)
+                (merge msg {:src src :count count})
+                msg)]
+      (when (= original-src ::self)
+        (when (global-count id)
+          (swap! global-push-counts (curry assoc id (inc pushes))))
+        (swap! state (curry assoc :pushes (inc pushes))))
       (if on?
         (when (or (and (not (deps? msg))
-                       (= count (global-count src)))
+                       (= count (global-count src))
+                       (or (not= src ::none)
+                           (push? msg)))
                   (and (deps? msg)
                        (not= deps new-deps)))
           (when (deps? msg)
@@ -72,7 +84,7 @@
 
 (defn on! [e]
   (let [{:keys [state]} e
-        {:keys [on? awaiting-on num-awaiting id]} @state]
+        {:keys [on? awaiting-on num-awaiting]} @state]
     (when (and (not (never? e)) (not on?))
       (swap! state (curry assoc :on? true))
       (go-loop [left num-awaiting
@@ -183,7 +195,7 @@
                         (every? #(= (get %1 src count) count))))
           (swap! stashes #(dissoc %1 src))
           (core/reduce #(%2 %1) false stashed))))
-    (swap! dep-data #(assoc id dep-counts))
+    (swap! dep-data #(assoc %1 id dep-counts))
     (send-self! (->Deps (join-to-deps dep-data))))
 
   [Push Src]
@@ -363,14 +375,15 @@ inner-event:
                   (reset! inner-stashes {}))
 
               :else
-              (do (swap! outer-deps #(assoc %1 src count))
-                  (let [stashed (get-in @inner-stashes [src count])]
-                    (when (= (get @inner-deps src count) count)
-                      (swap! inner-stashes #(dissoc %1 src))
-                      (when (empty? stashed)
-                        (send-self! msg))
-                      (doseq [send! stashed]
-                        (send!)))))))]
+              (when-not (= ::none src)
+                (swap! outer-deps #(assoc %1 src count))
+                (let [stashed (get-in @inner-stashes [src count])]
+                  (when (= (get @inner-deps src count) count)
+                    (swap! inner-stashes #(dissoc %1 src))
+                    (when (empty? stashed)
+                      (send-self! msg))
+                    (doseq [send! stashed]
+                      (send!)))))))]
       (on! (Event
             (fn [send-self!]
               (reset! full-off (subscribe! e #(process-outer send-self! %1)))
@@ -413,7 +426,8 @@ inner-event:
          quick-off (consume! e (fn [_]))]
      (on! e-init)
      (swap! (:state e) #(merge %1 {:awaiting-on (chan) :on? false}))
-     (go (>! e-channel {:e e :quick-off quick-off}))
+     (go (>! e-channel {:e e :quick-off quick-off
+                        :init-id (:id @(:state e-init))}))
      res)))
 
 (defn defer-off

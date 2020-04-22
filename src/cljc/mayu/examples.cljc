@@ -155,11 +155,10 @@
       <[change-score-button -1]>]])
 
 (defui my-ui []
-  ; <[offs-test]
-  ; <[stash-demo1]
-  ; <[stash-demo2]
-  ; <[stash-demo3]
-  ; <[countdown]
-  <[scores]
-  )
+  <[offs-test]
+  <[stash-demo1]
+  <[stash-demo2]
+  <[stash-demo3]
+  <[countdown]
+  <[scores])
 

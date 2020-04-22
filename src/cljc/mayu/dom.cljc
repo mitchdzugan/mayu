@@ -70,10 +70,10 @@
                      (get existing target)
                      (let [res
                            (-> #(let [handler (fn [dom-event]
-                                                (%1 (e/->Val dom-event {})))]
+                                                (%1 (e/->Push dom-event ::e/self :next)))]
                                   (.addEventListener el target handler)
-                                  [(fn []
-                                     (.removeEventListener el target handler))])
+                                  (fn []
+                                     (.removeEventListener el target handler)))
                                e/Event
                                e/on!
                                e/defer-off)]
@@ -158,7 +158,7 @@
          (emit ::request-render (e/shadow (s/changed s-mdom)))
          (w/eachm (keys (:events init-writer))
                   #(step %1 (mdo s-event <- (s/map %1 s-events)
-                                 (emit %1 (s/unwrap-event s-event)))))
+                                 (emit %1 (e/shadow (s/unwrap-event s-event))))))
          [s-result])))
 
 (defnm memo [via m]

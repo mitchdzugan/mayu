@@ -8,7 +8,8 @@
             [mayu.mdom
              :refer [->MText ->MCreateElement ->MBind]]
             [wayra.core :as w
-             :refer [defnm defm mdo fnm]]))
+             :refer [defnm defm mdo fnm]])
+  #?(:cljs (:require-macros [mayu.dom :refer [mk-ons]])))
 
 (defm env (w/asks :env))
 
@@ -50,8 +51,36 @@
                                              (inc label-count))}))
   [res])
 
-(defn on-click [{:keys [make-event-from-target]}]
-  (make-event-from-target "click"))
+(def targets
+  ["on-abort" "on-after-print" "on-animation-end" "on-animation-iteration"
+   "on-animation-start" "on-before-print" "on-before-unload" "on-blur"
+   "on-can-play" "on-can-play-through" "on-change" "on-click" "on-context-menu"
+   "on-copy" "on-cut" "on-dblclick" "on-drag" "on-drag-end" "on-drag-enter"
+   "on-drag-leave" "on-drag-over" "on-drag-start" "on-drop" "on-duration-change"
+   "on-ended" "on-error" "on-focus" "on-focus-in" "on-focus-out"
+   "on-fullscreen-change" "on-fullscreen-error" "on-hash-change" "on-input"
+   "on-invalid" "on-key-down" "on-key-press" "on-key-up" "on-load"
+   "on-loaded-data" "on-loaded-metadata" "on-load-start" "on-message"
+   "on-mouse-down" "on-mouse-enter" "on-mouse-leave" "on-mouse-move"
+   "on-mouse-over" "on-mouse-out" "on-mouse-up" "on-mouse-wheel" "on-offline"
+   "on-online" "on-open" "on-page-hide" "on-page-show" "on-paste" "on-pause"
+   "on-play" "on-playing" "on-popstate" "on-progress" "on-rate-change"
+   "on-resize" "on-reset" "on-scroll" "on-search" "on-seeked" "on-seeking"
+   "on-select" "on-show" "on-stalled" "on-storage" "on-submit" "on-suspend"
+   "on-time-update" "on-toggle" "on-touch-cancel" "on-touch-end" "on-touch-move"
+   "on-touch-start" "on-transition-end" "on-unload" "on-volume-change"
+   "on-waiting" "on-wheel"])
+
+#?(:clj
+   (defmacro mk-ons []
+     `(do
+        ~@(map (fn [name]
+                 `(defn ~(symbol name) [el#]
+                    ((:make-event-from-target el#)
+                     ~(-> name (subs 3) (clojure.string/replace #"-" "")))))
+               targets))))
+
+(mk-ons)
 
 (defnm inner-create-element [key tag attrs m]
   path <- curr-unique-path
@@ -70,7 +99,7 @@
                      (get existing target)
                      (let [res
                            (-> #(let [handler (fn [dom-event]
-                                                (%1 (e/->Push dom-event ::e/self :next)))]
+                                                (%1 (e/Push dom-event :self :next)))]
                                   (.addEventListener el target handler)
                                   (fn []
                                      (.removeEventListener el target handler)))
@@ -222,6 +251,3 @@
                         (fn [_] (use-mdom (:mdom writer))))]
     (use-mdom (:mdom writer))
     {:off off :result (:result result)}))
-
-(defnm when [b m]
-  (w/whenm b m))

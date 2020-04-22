@@ -43,7 +43,7 @@
         (dom/emit ::score2 (e/map (varg# 1) (dom/on-click btn)))
         s-score2 <- (dom/envs ::score2)
         <[dom/bind s-score2 $[score2]=
-          <[div (str "Score2: " score2)]]]
+          <[div (str "Score 2: " score2)]]]
       <[change-score-button 1]>
       <[score-display score]
       <[change-score-button -1]>]])
@@ -89,7 +89,7 @@
   let [e-alert-off (e/map (varg# nil) (e/defer e-alert 2000))]
   s-alert <- (s/from nil (e/join e-alert e-alert-off))
   <[dom/bind s-alert $[alert]=
-    <[dom/when (not (nil? alert)) $=
+    <[when (not (nil? alert))
       <[div {:class "fixed"} $=
         <[div {:class "uk-card uk-card-default uk-card-body"} $=
           <[dom/unstash alert]]]]])
@@ -141,12 +141,15 @@
     s-score <- (dom/envs ::score)
     <[dom/bind s-score $[score]=
       <[dom/keyed score $=
-        <[dom/collect-and-reduce ::score2 #(+ %1 %2) 0 $=
-          <[button "Inc scores"] btn >
-          (dom/emit ::score2 (e/map (varg# 1) (dom/on-click btn)))
+        <[dom/collect-and-reduce ::score2 #(-> %2) 0 $=
           s-score2 <- (dom/envs ::score2)
+          <[button "Inc scores"] btn >
           <[dom/bind s-score2 $[score2]=
             s-timer <- (s/reduce inc 0 (e/timer 300))
+            (dom/emit ::score2 (e/tag-with +
+                                           (e/map (varg# 1000)
+                                                  (dom/on-click btn))
+                                           s-timer))
             <[dom/bind s-timer $[timer]=
               <[p (str timer)]]
             <[div (str "Score2: " score2)]]]]
@@ -154,11 +157,52 @@
       <[score-display score]
       <[change-score-button -1]>]])
 
+(defui special-syms []
+  <[case 3
+    <[4 <[p "not this"]]
+    <[3 <[p "This!"]]
+    <[2 <[p "noep"]]]
+  <[case 3
+    <[4 <[p "not this"]]
+    <[2 <[p "noep"]]
+    <[:else <[p "none of the above"]]]
+  <[condp = 3
+    <[4 <[p "not this"]]
+    <[3 <[p "This!"]]
+    <[2 <[p "noep"]]]
+  <[condp = 3
+    <[4 <[p "not this"]]
+    <[2 <[p "noep"]]
+    <[:else <[p "none of the above"]]]
+  <[cond
+    <[(= 0 1) <[p "not this"]]
+    <[(= 1 1)
+      <[p "this"]
+      <[p "with multiple lines"]]]
+  <[cond
+    <[(= 0 1) <[p "not this"]]
+    <[:else
+      <[p "this"]
+      <[p "with multiple lines"]]]
+  <[when true
+    <[p "when true"]
+    <[p "as much as you want"]]
+  <[when false <[p "cant see me"]]
+  <[when-not false <[p "when-not false"]]
+  <[when-not true <[p "cant see me"]]
+  <[if (= 1 1)
+    <[then <[p "Yay!"]]
+    <[else <[p "boo..."]]]
+  <[if (= 0 1)
+    <[then <[p "umm"]]
+    <[else <[p "Nice!"]]])
+
 (defui my-ui []
   <[offs-test]
   <[stash-demo1]
   <[stash-demo2]
   <[stash-demo3]
   <[countdown]
-  <[scores])
+  <[scores]
+  <[special-syms])
 

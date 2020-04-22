@@ -5,7 +5,7 @@
              :refer [defnm defm mdo]]
             #?(:clj [clojure.core :as core]
                :cljs [cljs.core :as core])
-            [mayu.frp.event :as e]))
+            [mayu.frp.impl.event :as e]))
 
 (defn off! [s] ((:off! s)))
 (defn inst! [s] ((:inst! s)))

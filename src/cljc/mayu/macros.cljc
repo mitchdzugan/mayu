@@ -5,26 +5,76 @@
             [mayu.dom :as dom])
   #?(:cljs (:require-macros [mayu.macros :refer [ui defui]])))
 
+(comment :special-cases
+         <[if bool
+           <[then ...]
+           <[else ...]]
+         <[case x
+           <[1 <[]]
+           ]
+         )
+
 #?(:clj
    (defmacro ui [& body]
-     (let [mk-args (fn [els]
-                     (let [[f & args] els
-                           f (if (get tags/tag-map (name f))
-                               `(partial mayu.dom/create-element ~(name f))
-                               f)
-                           els (concat [f] args)
-                           split (partition-by #(or (= '$ %1)
-                                                    (= '= %1)
-                                                    (= '$= %1))
-                                               els)
-                           scount (count split)]
-                       (cond
-                         (= 3 scount) (concat (nth split 0)
-                                              [`(ui ~@(nth split 2))])
-                         (= 5 scount) (concat (nth split 0)
-                                              [`(fn ~(first (nth split 2))
-                                                  (ui ~@(nth split 4)))])
-                         :else els)))]
+     (let [mk-args
+           (fn [els]
+             (let [[f & args] els]
+               (condp = f
+                 ;; TODO ensure valid syntax and error message if not
+                 'if `(if ~(nth args 0)
+                        (dom/step ::if-then (ui ~@(drop 1 (nth args 2))))
+                        (dom/step ::if-else (ui ~@(drop 1 (nth args 4)))))
+                 'when `(if ~(nth args 0)
+                          (dom/step ::when (ui ~@(drop 1 args)))
+                          (w/pure nil))
+                 'when-not `(if ~(nth args 0)
+                              (w/pure nil)
+                              (dom/step ::when-not (ui ~@(drop 1 args))))
+                 'case `(case ~(nth args 0)
+                          ~@(mapcat (fn [clause id]
+                                      (let [matcher (nth clause 0)
+                                            else? (= :else matcher)
+                                            body
+                                            `(dom/step ~(str "case." id)
+                                                       (ui ~@(drop 1 clause)))]
+                                        (if else? [body] [matcher body])))
+                                    (filter vector? (drop 1 args))
+                                    (range)))
+                 'condp `(condp ~(nth args 0) ~(nth args 1)
+                           ~@(mapcat (fn [clause id]
+                                       (let [matcher (nth clause 0)
+                                             else? (= :else matcher)
+                                             body
+                                             `(dom/step ~(str "condp." id)
+                                                        (ui ~@(drop 1 clause)))]
+                                         (if else? [body] [matcher body])))
+                                     (filter vector? (drop 2 args))
+                                     (range)))
+                 'cond `(cond
+                          ~@(mapcat (fn [clause id]
+                                      (let [matcher (nth clause 0)
+                                            body
+                                            `(dom/step ~(str "cond." id)
+                                                       (ui ~@(drop 1 clause)))]
+                                        [matcher body]))
+                                    (filter vector? args)
+                                    (range)))
+                 (let [f (if (get tags/tag-map (name f))
+                           `(partial mayu.dom/create-element ~(name f))
+                           f)
+                       els (concat [f] args)
+                       split (partition-by #(or (= '$ %1)
+                                                (= '= %1)
+                                                (= '$= %1))
+                                           els)
+                       scount (count split)]
+                   (cond
+                     (= 3 scount) (concat (nth split 0)
+                                          [`(ui ~@(nth split 2))])
+                     (= 5 scount) (concat (nth split 0)
+                                          [`(fn ~(first (nth split 2))
+                                              (ui ~@(nth split 4)))])
+                     :else els)))))]
        `(mdo
           ~@(mapcat (fn [pthd psnd prev curr scnd thrd frth]
                       (cond

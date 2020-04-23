@@ -1,6 +1,6 @@
 (ns mayu.macros
   (:require [wayra.core :as w
-             :refer [mdo defnm fnm]]
+             :refer [mdo defnm fnm <#>]]
             [mayu.tags :as tags]
             [mayu.dom :as dom])
   #?(:cljs (:require-macros [mayu.macros :refer [ui defui]])))
@@ -59,9 +59,20 @@
                                         [matcher body]))
                                     (filter vector? args)
                                     (range)))
-                 (let [f (if (get tags/tag-map (name f))
+                 'for `(w/mapm (fn ~(nth args 2)
+                                  (ui ~@(drop 4 args)))
+                               ~(nth args 0))
+                 'apply `(<#> (ui ~@(drop 1 args))
+                                   ~(nth args 0))
+                 (let [f (cond
+                           (get tags/tag-map (name f))
                            `(partial mayu.dom/create-element ~(name f))
-                           f)
+
+                           (get tags/tag_-map (name f))
+                           `(partial mayu.dom/create-element_
+                                     ~(subs (name f) 0 (dec (count (name f)))))
+
+                           :else f)
                        els (concat [f] args)
                        split (partition-by #(or (= '$ %1)
                                                 (= '= %1)

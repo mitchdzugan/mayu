@@ -9,7 +9,11 @@
 
 (def never? e/never?)
 
-(def Event e/Event)
+(defn Event
+  ([] (e/Event))
+  ([on-req]
+   (e/Event (fn [send-self!]
+              (on-req #(send-self! (e/->Push %1 ::e/self :next)))))))
 
 (def on! e/on!)
 

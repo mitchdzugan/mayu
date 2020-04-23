@@ -8,7 +8,7 @@
             [mayu.mdom
              :refer [->MText ->MCreateElement ->MBind]]
             [wayra.core :as w
-             :refer [defnm defm mdo fnm]])
+             :refer [defnm defm mdo fnm <#>]])
   #?(:cljs (:require-macros [mayu.dom :refer [mk-ons]])))
 
 (defm env (w/asks :env))
@@ -99,7 +99,7 @@
                      (get existing target)
                      (let [res
                            (-> #(let [handler (fn [dom-event]
-                                                (%1 (e/Push dom-event :self :next)))]
+                                                (%1 dom-event))]
                                   (.addEventListener el target handler)
                                   (fn []
                                      (.removeEventListener el target handler)))
@@ -123,18 +123,24 @@
    {:keys [key]} <- w/get
    (w/pass (step tag (inner-create-element key tag attrs m)))))
 
+(defnm create-element_ [& args]
+  (<#> (apply create-element args)
+       :res))
+
 (defnm emit [k e]
   (w/tell {:events {k e}}))
 
 (defnm collect [k mf]
-  (w/pass #(assoc-in %1 [:events k] [])
-          (mdo {:keys [res]} <- (w/preemptm e/preempt :e
-                                            #(mdo [res w] <- (w/listen (mf %1))
-                                                  let [e (->> [:events k]
-                                                              (get-in w)
-                                                              (apply e/join))]
-                                                  [{:res res :e e}]))
-               [[res (curry update :events #(dissoc %1 k))]])))
+  (step k
+        (w/pass #(assoc-in %1 [:events k] [])
+                (mdo {:keys [res]} <-
+                     (w/preemptm e/preempt :e
+                                 #(mdo [res w] <- (w/listen (mf %1))
+                                       let [e (->> [:events k]
+                                                   (get-in w)
+                                                   (apply e/join))]
+                                       [{:res res :e e}]))
+                     [[res (curry update :events #(dissoc %1 k))]]))))
 
 (defn reset-used [m]
   (a/map-values (varg# (assoc %1 :used? false)) m))
@@ -148,8 +154,11 @@
                           agg)))]
       (reduce-kv reducer {} m))))
 
-(defn off-bind [{{:keys [memos signals binds]} :state :as bind}]
+(defn off-bind [{{:keys [memos signals binds offs]} :state :as bind}]
   (reset! memos {})
+  (doseq [off @offs]
+    (off))
+  (reset! offs [])
   (doseq [[_ {:keys [off]}] @signals]
     (off))
   (reset! signals {})
@@ -166,13 +175,18 @@
          let [bind (or (get-in @binds [path :state])
                        {:memos (atom {})
                         :signals (atom {})
-                        :binds (atom {})})]
+                        :binds (atom {})
+                        :offs (atom [])})]
          [(swap! binds #(-> %1
                             (assoc-in [path :used?] true)
                             (assoc-in [path :state] bind)))]
          s-shadowed <- (s/from (s/inst! s) (e/shadow (s/changed s)))
          s-exec <- (s/map #(do (swap! (:signals bind) reset-used)
                                (swap! (:binds bind) reset-used)
+                               (swap! (:offs bind) (fn [offs]
+                                                     (doseq [off offs]
+                                                       (off))
+                                                     []))
                                (let [res (->> (w/local (curry merge bind) (f %1))
                                               (w/exec {:init-writer init-writer
                                                        :reader reader}))]
@@ -195,6 +209,12 @@
                                  (emit %1 (s/unwrap-event s-event)))))
          [s-result])))
 
+(defnm consume! [t f]
+  let [event? (nil? (:inst! t))
+       consumer (if event? e/consume! s/consume!)]
+  offs <- (envs :offs)
+  [(swap! offs (curry conj (consumer t f)))])
+
 (defnm memo [via m]
   (step ::memo
         (mdo memos <- (w/asks :memos)
@@ -209,6 +229,17 @@
   (collect k (fnm [e]
                   s <- (s/reduce r i e)
                   (assoc-env k s m))))
+
+(defnm collect-reduce-and-bind [k r i fm]
+  (collect k (fnm [e]
+                  s <- (s/reduce r i e)
+                  (assoc-env k s (bind s fm)))))
+
+(defn collect-values [k i m]
+  (collect-and-reduce k #(-> %2) i m))
+
+(defn collect-values-and-bind [k i fm]
+  (collect-reduce-and-bind k #(-> %2) i fm))
 
 (defnm stash [m]
   (w/pass (mdo [res w] <- (w/listen m)
@@ -230,24 +261,29 @@
                                    :used? true}))])
 
 (defn run [e-el env m use-mdom]
-  (let [{:keys [writer result]}
+  (let [reader {:e-el e-el
+                :step-fn step
+                :active-signal active-signal
+                :set-active set-active
+                :signals (atom {})
+                :binds (atom {})
+                :memos (atom {})
+                :offs (atom [])
+                :env env
+                :last-step ::root
+                :last-unique-step ::root}
+        {:keys [writer result]}
         (->> (collect ::request-render
                       (fnm [e]
                            result <- m
                            [{:result result
                              :request-render e}]))
-             (w/exec {:reader {:e-el e-el
-                               :step-fn step
-                               :active-signal active-signal
-                               :set-active set-active
-                               :signals (atom {})
-                               :binds (atom {})
-                               :memos (atom {})
-                               :env env
-                               :last-step ::root
-                               :last-unique-step ::root}
+             (w/exec {:reader reader
                       :init-writer {:mdom [] :events {}}}))
         off (e/consume! (e/throttle (:request-render result) 10)
                         (fn [_] (use-mdom (:mdom writer))))]
     (use-mdom (:mdom writer))
-    {:off off :result (:result result)}))
+    {:off (fn []
+            (off-bind reader)
+            (off))
+     :result (:result result)}))

@@ -14,3 +14,6 @@
    "ul" "var" "video" "wbr"])
 
 (def tag-map (reduce #(assoc %1 %2 true) {} tags))
+
+(def tag_-map
+  (reduce #(assoc %1 (str %2 "_") true) {} tags))

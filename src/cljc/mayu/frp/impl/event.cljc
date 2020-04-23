@@ -58,12 +58,12 @@
           {:keys [subs on? num-awaiting awaiting-on deps id pushes]} @state
           {new-deps :deps :keys [src count]} msg
           original-src src
-          src (if (= original-src :self) id src)
-          count (if (= original-src :self) (inc pushes) count)
-          msg (if (= original-src :self)
+          src (if (= original-src ::self) id src)
+          count (if (= original-src ::self) (inc pushes) count)
+          msg (if (= original-src ::self)
                 (merge msg {:src src :count count})
                 msg)]
-      (when (= original-src :self)
+      (when (= original-src ::self)
         (when (global-count id)
           (swap! global-push-counts (curry assoc id (inc pushes))))
         (swap! state (curry assoc :pushes (inc pushes))))

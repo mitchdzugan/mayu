@@ -1,12 +1,12 @@
 (ns mayu.examples
   (:require [allpa.core
-             :refer [varg#]]
+             :refer [varg# defprotomethod]]
             [mayu.macros
              :refer [defui ui]]
             [mayu.frp.event :as e]
             [mayu.frp.signal :as s]
-            [mayu.dom :as dom]))
-
+            [mayu.dom :as dom]
+            [mayu.dom.to-string.attrs :as attrs]))
 
 (defui my-component [n]
   (= 0 n) --> <[span "loading"]
@@ -126,7 +126,7 @@
 (defui stash-demo1 []
   <[ul $=
     <[dom/stash $=
-      <[li "appear"]
+      <[li_ "appear"]
       <[li "in"]
       <[li "order"]
       ] stashed >
@@ -158,6 +158,9 @@
       <[change-score-button -1]>]])
 
 (defui special-syms []
+  <[ul $=
+    <[for ["this" "is" "a" "list"] $[s]=
+      <[li s]]]
   <[case 3
     <[4 <[p "not this"]]
     <[3 <[p "This!"]]
@@ -197,7 +200,79 @@
     <[then <[p "umm"]]
     <[else <[p "Nice!"]]])
 
+;; this component draws a styled input component and label and
+;; returns an event that fires everytime its input changes with
+;; the value it is being changed to
+(defui styled-input [k label]
+  ;; for every dom tag like `div` there is a corresponding
+  ;; version ending in _ like `div_` that returns the result
+  ;; of its children instead of itself.
+  <[div_ {:class "uk-card uk-card-default uk-card-body"} $=
+    <[label_ $=
+      <[dom/text label]
+      sig <- (dom/envs k)
+      ;; `apply` runs its children and then returns the result of
+      ;; applying its 1st function argument to that result. In this
+      ;; case we apply `s/unwrap-event` which converts a signal of
+      ;; events to an event. This is because `dom/bind` returns a
+      ;; signal which contains the result of its children over time
+      ;; as its input signal changes.
+      <[apply s/unwrap-event
+        <[dom/bind sig $[val]=
+          <[input {:value val}] el-input >
+          [(e/map #(.. %1 -target -value) (dom/on-input el-input))]]]]])
+
+(defui inputs-demo []
+  <[dom/collect-values ::upper "" $=
+    e-changed <- <[styled-input ::upper "Force uppercase"]
+    (dom/emit ::upper (e/map clojure.string/upper-case e-changed))]
+  <[dom/collect-values ::max-5 "" $=
+    e-changed <- <[styled-input ::max-5 "Max 5 chars"]
+    (dom/emit ::max-5 (e/filter #(<= (count %1) 5) e-changed))])
+
+(defui syntax-demo []
+  <[div {:class "uk-card uk-card-default uk-card-body"} $=
+    <[p "some message"]]
+  #_[ul $=
+    <[li "1"]
+    <[li "2"]
+    <[li "3"]
+    <[li "4"]
+     <[li "5"]])
+
+(defrecord Append [])
+
+(defrecord Remove [id])
+
+(defprotomethod reduce-action [{:keys [id]} items]
+  Append
+  (conj items {:id (->> items (apply max-key :id) :id inc)})
+  Remove
+  (->> items (remove #(= id (:id %1))) vec))
+
+(defui animations-demo []
+  let [reducer #(reduce-action %2 %1)]
+  <[dom/collect-reduce-and-bind ::items reducer [] $[items]=
+    <[button {:style {:margin-left "55px"}} "+"] btn >
+    (dom/emit ::items (e/map (varg# (->Append)) (dom/on-click btn)))
+    <[for items $[{:keys [id]}]=
+      <[dom/keyed id $=
+        <[div {:style {:display "flex"
+                       :align-items "stretch"
+                       :margin "5px"
+                       :transition "transform 0.4s"
+                       :transform "scale(0, 0)"
+                       :delayed {:transform "scale(1, 1)"}
+                       :remove {:transform "scale(0, 0)"}}} $=
+          <[div {:style {:background-color "#74f7df"
+                         :width "50px"}}]
+          <[button "x"] btn >
+          (dom/emit ::items (e/map (varg# (->Remove id)) (dom/on-click btn)))]]]])
+
 (defui my-ui []
+  <[animations-demo]
+  <[syntax-demo]
+  <[inputs-demo]
   <[offs-test]
   <[stash-demo1]
   <[stash-demo2]
@@ -205,4 +280,5 @@
   <[countdown]
   <[scores]
   <[special-syms])
+
 

@@ -1,12 +1,17 @@
 (ns mayu.dom
   (:require [allpa.core :as a
-             :refer [curry varg#]]
+             :refer [curry defprotomethod]]
+            [clojure.string :as str]
+            #?(:clj [clojure.pprint :refer [pprint]]
+               :cljs [cljs.pprint :refer [pprint]])
             [mayu.frp.event :as e]
             [mayu.frp.signal :as s]
             [mayu.async
              :refer [go go-loop timeout <! chan >! close!]]
+            [mayu.dom.to-string.attrs
+             :refer [render-attr-map]]
             [mayu.mdom
-             :refer [->MText ->MCreateElement ->MBind]]
+             :refer [->MText ->MCreateElement ->MBind ->MSSRAwait]]
             [wayra.core :as w
              :refer [defnm defm mdo fnm <#>]])
   #?(:cljs (:require-macros [mayu.dom :refer [mk-ons]])))
@@ -143,7 +148,7 @@
                      [[res (curry update :events #(dissoc %1 k))]]))))
 
 (defn reset-used [m]
-  (a/map-values (varg# (assoc %1 :used? false)) m))
+  (a/map-values (fn [desc _] (assoc desc :used? false)) m))
 
 (defn check-used [off]
   (fn [m]
@@ -180,6 +185,8 @@
          [(swap! binds #(-> %1
                             (assoc-in [path :used?] true)
                             (assoc-in [path :state] bind)))]
+         split-id <- (w/gets :split-id)
+         s-split-id <- (s/from split-id e/never)
          s-shadowed <- (s/from (s/inst! s) (e/shadow (s/changed s)))
          s-exec <- (s/map #(do (swap! (:signals bind) reset-used)
                                (swap! (:binds bind) reset-used)
@@ -189,6 +196,7 @@
                                                      []))
                                (let [res (->> (w/local (curry merge bind) (f %1))
                                               (w/exec {:init-writer init-writer
+                                                       :init-state {:split-id (s/inst! s-split-id)}
                                                        :reader reader}))]
                                  (swap! (:signals bind)
                                         (check-used (fn [{:keys [off]}] (off))))
@@ -196,6 +204,8 @@
                                         (check-used off-bind))
                                  res))
                           s-shadowed)
+         (w/modify #(assoc %1 :split-id (get-in (s/inst! s-exec)
+                                                [:state :split-id])))
          s-writer <- (s/map :writer s-exec)
          s-events <- (s/map :events s-writer)
          s-result <- (s/map :result s-exec)
@@ -248,6 +258,38 @@
 
 (defnm unstash [{:keys [mdom]}] (w/eachm mdom #(w/tell {:mdom %1})))
 
+(defnm ssr-await [ready? timeout fallback good]
+  prev-split-path <- (w/asks :split-path)
+  split-id <- (w/gets :split-id)
+  let [split-path (conj prev-split-path split-id)]
+  (w/modify #(update %1 :split-id inc))
+  (step [::ssr-await split-path]
+        (mdo
+         ssr? <- (w/asks :ssr?)
+         (not ssr?) --> (<#> good (fn [_] nil))
+         s-timer <- (s/reduce (fn [curr _] (+ 100 curr))
+                                0
+                                (e/timer 100))
+         (bind s-timer
+               (fnm [timer]
+                    (w/local #(assoc %1 :split-path split-path)
+                             (w/pass (mdo
+                                      let [timeout? (> timer timeout)
+                                           done? (or ready? timeout?)
+                                           fail? (and (not ready?)
+                                                      timeout?)]
+                                      (cond
+                                        ready? good
+                                        timeout? fallback
+                                        :else (w/pure nil))
+                                      [[nil
+                                        (curry update :mdom
+                                               #(-> [(->MSSRAwait split-path
+                                                                  done?
+                                                                  fail?
+                                                                  %1)]))]])))))
+         [])))
+
 (defm active-signal
   path <- curr-path
   signals <- (w/asks :signals)
@@ -260,8 +302,9 @@
                                    :off (fn [] (s/off! signal))
                                    :used? true}))])
 
-(defn run [e-el env m use-mdom]
+(defn run [e-el ssr? env m use-mdom]
   (let [reader {:e-el e-el
+                :ssr? ssr?
                 :step-fn step
                 :active-signal active-signal
                 :set-active set-active
@@ -269,6 +312,7 @@
                 :binds (atom {})
                 :memos (atom {})
                 :offs (atom [])
+                :split-path []
                 :env env
                 :last-step ::root
                 :last-unique-step ::root}
@@ -279,11 +323,127 @@
                            [{:result result
                              :request-render e}]))
              (w/exec {:reader reader
+                      :init-state {:split-id 0}
                       :init-writer {:mdom [] :events {}}}))
         off (e/consume! (e/throttle (:request-render result) 10)
                         (fn [_] (use-mdom (:mdom writer))))]
     (use-mdom (:mdom writer))
     {:off (fn []
-            (off-bind reader)
+            (off-bind {:state reader})
             (off))
      :result (:result result)}))
+
+(defn gen-uuid []
+  (str (#?(:clj java.util.UUID/randomUUID :cljs random-uuid))))
+
+(defprotomethod proc-mdom [mdom split-path state]
+  !MSSRAwait
+  (let [{:keys [uuids]} @state
+        {next-path :split-path :keys [done? children]} mdom
+        uuid (get uuids next-path (gen-uuid))]
+    (when done?
+      (swap! state #(update %1 :splits (curry conj [children next-path]))))
+    (swap! state #(assoc-in %1 [:uuids next-path] uuid))
+    (swap! state #(assoc-in %1 [:children split-path next-path] true))
+    uuid)
+
+  !MText
+  (:s mdom)
+
+  !MCreateElement
+  (let [{:keys [tag attrs children]} mdom
+        fixed-attrs (update attrs :style #(-> %1
+                                              (dissoc :delayed :remove)
+                                              (merge (:delayed %1))))]
+    (str "<" tag (render-attr-map fixed-attrs) ">"
+         (reduce #(str %1 (proc-mdom %2 split-path state)) "" children)
+         "</" tag ">"))
+
+  !MBind
+  (reduce #(str %1 (proc-mdom %2 split-path state)) "" (s/inst! (:signal mdom))))
+
+(defn str-split [s s1]
+  (let [i (clojure.string/index-of s s1)]
+    [(subs s 0 i) (subs s (+ i (count s1)))]))
+
+(defn stream-rendered [split-path state send!]
+  (cond
+    (= -1 (last split-path)) true
+
+    (nil? (get-in @state [:rendered split-path])) false
+
+    :else
+    (let [children (keys (get-in @state [:children split-path]))
+          rendered (get-in @state [:rendered split-path])
+          parts (->> children
+                     (reduce (fn [{:keys [rest parts]} child-path]
+                               (let [uuid (get-in @state [:uuids child-path])
+                                     splits (str-split rest uuid)]
+                                 {:rest (nth splits 1)
+                                  :parts (conj parts (nth splits 0))}))
+                             {:rest rendered :parts []})
+                     (#(conj (:parts %1) (:rest %1))))]
+      (->> (concat [(conj split-path -1)] children)
+           (map (fn [post path] {:post post :path path}) parts)
+           (reduce (fn [all? {:keys [path post]}]
+                     (cond
+                       (not all?) false
+                       (get-in @state [:streamed path]) true
+
+                       (stream-rendered path state send!)
+                       (do (send! post)
+                           (swap! state #(assoc-in %1 [:streamed path] true))
+                           true)
+
+                       :else false))
+                   true)))))
+
+(defn render-to-string [env m]
+  (let [done? (atom false)
+        off (atom (fn [] (reset! done? true)))
+        state (atom {})
+        send-id (atom 0)
+        c (chan)
+        send! #(let [id @send-id]
+                 (swap! send-id inc)
+                 (go (>! c [id %1])))
+        fc (chan)
+
+        {run-off :off}
+        (run e/never true env m
+          #(do (loop [[[mdoms split-path] & splits] [[%1 []]]]
+                 (when-not (nil? split-path)
+                   (swap! state (curry assoc :splits []))
+                   (let [markup
+                         (reduce (fn [agg mdom]
+                                   (str agg (proc-mdom mdom split-path state)))
+                                 ""
+                                 mdoms)]
+                     (when (nil? (get-in @state [:rendered split-path]))
+                       (swap! state (curry assoc-in
+                                           [:rendered split-path]
+                                           markup)))
+                     (recur (concat splits (:splits @state))))))
+               (when (stream-rendered [] state send!)
+                 (send! :off)
+                 (@off)
+                 )))]
+    (if @done? (run-off) (reset! off run-off))
+    (go-loop [off? false buffered {} next 0]
+      (if (or (not off?) (not (empty? buffered)))
+        (let [[id msg] (<! c)]
+          (cond
+            (= :off msg) (recur true buffered next)
+            (not= id next) (recur off? (assoc buffered id msg) next)
+            :else
+            (do (>! fc msg)
+                (let [[buffered next]
+                      (loop [buffered buffered next (inc next)]
+                        (if (contains? buffered next)
+                          (do (>! fc (get buffered next))
+                              (recur (dissoc buffered next) (inc next)))
+                          [buffered next]))]
+                  (recur off? buffered next)))))
+        (do (close! c)
+            (close! fc))))
+    fc))

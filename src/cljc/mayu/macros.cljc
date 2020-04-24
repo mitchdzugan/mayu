@@ -63,7 +63,11 @@
                                   (ui ~@(drop 4 args)))
                                ~(nth args 0))
                  'apply `(<#> (ui ~@(drop 1 args))
-                                   ~(nth args 0))
+                              ~(nth args 0))
+                 'ssr-await `(dom/ssr-await ~(nth args 0)
+                                            ~(nth args 1)
+                                            (ui ~@(drop 1 (nth args 3)))
+                                            (ui ~@(drop 1 (nth args 5))))
                  (let [f (cond
                            (get tags/tag-map (name f))
                            `(partial mayu.dom/create-element ~(name f))

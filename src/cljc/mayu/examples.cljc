@@ -1,6 +1,8 @@
 (ns mayu.examples
-  (:require [allpa.core
+  (:require [allpa.core :as a
              :refer [varg# defprotomethod]]
+            [mayu.async
+             :refer [go go-loop timeout <! chan >! close!]]
             [mayu.macros
              :refer [defui ui]]
             [mayu.frp.event :as e]
@@ -251,8 +253,7 @@
   (->> items (remove #(= id (:id %1))) vec))
 
 (defui animations-demo []
-  let [reducer #(reduce-action %2 %1)]
-  <[dom/collect-reduce-and-bind ::items reducer [] $[items]=
+  <[dom/collect-reduce-and-bind ::items (a/flip reduce-action) [] $[items]=
     <[button {:style {:margin-left "55px"}} "+"] btn >
     (dom/emit ::items (e/map (varg# (->Append)) (dom/on-click btn)))
     <[for items $[{:keys [id]}]=
@@ -269,7 +270,29 @@
           <[button "x"] btn >
           (dom/emit ::items (e/map (varg# (->Remove id)) (dom/on-click btn)))]]]])
 
+(defui ssr-await-demo []
+  s-timer <- (s/reduce inc 0 (e/timer 1000))
+  <[dom/bind s-timer $[timer]=
+    <[ul $=
+      <[li "Begin"]
+      <[ssr-await (>= timer 2) 4000
+        <[timeout <[li "Failed to load in time"]]
+        <[then    <[li "Slow loading 1"]]]
+      <[ssr-await (>= timer 8) 4000
+        <[timeout <[li "Failed to load in time"]]
+        <[then    <[li "Slow loading 2"]]]
+      <[ssr-await (>= timer 2) 4000
+        <[timeout <[li "Failed to load in time"]]
+        <[then    <[li "Slow loading 3"]]]
+      <[li "End"]]])
+
 (defui my-ui []
+  [(let [c (dom/render-to-string {} ssr-await-demo)]
+     (go-loop []
+       (let [more (<! c)]
+         (when more
+           (println more)
+           (recur)))))]
   <[animations-demo]
   <[syntax-demo]
   <[inputs-demo]

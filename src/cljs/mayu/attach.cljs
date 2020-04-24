@@ -90,7 +90,10 @@
     [(h tag data vchildren)])
 
   !mdom/MBind
-  (mapcat (curry to-vdoms e-el) (s/inst! (:signal mdom))))
+  (mapcat (curry to-vdoms e-el) (s/inst! (:signal mdom)))
+
+  !mdom/MSSRAwait
+  (mapcat (curry to-vdoms e-el) (:children mdom)))
 
 (defn attach [id raw-env ui]
   (let [e-el (e/on! (e/Event))
@@ -102,7 +105,7 @@
                          #js {:create update-mutable
                               :update update-mutable}
                          (.-default style)])]
-    (dom/run e-el env ui
+    (dom/run e-el false env ui
       #(let [vdom (h "div" (clj->js {:attrs {:id id}})
                      (clj->js (mapcat (curry to-vdoms e-el) %1)))]
          (patch @a-prev vdom)

@@ -2,7 +2,7 @@
   (:require [wayra.core :as w
              :refer [defnm defm mdo]]
             [mayu.frp.event :as frp]
-            [mayu.frp.signal :as s]
+            [mayu.frp.raw.signal :as s]
             [mayu.attach :as attach]
             [mayu.examples :as examples]
             [cljs.pprint :refer [pprint]]
@@ -14,16 +14,7 @@
 
 (defn run-frp []
   #_(let [e (frp/reduce inc 0 (frp/timer 1000))
-        {s :signal} (s/build (s/from 0 e))]
-    (frp/push! e 0)
-    (frp/push! e 0)
-    (frp/push! e 0)
-    (frp/push! e 0)
-    (frp/push! e 0)
-    (frp/push! e 0)
-    (frp/push! e 0)
-    (frp/push! e 0)
-    (frp/push! e 0)
+        s (s/from 0 e)]
     (s/consume! s (logger :s)))
   #_(let [e (frp/defer-off (frp/Event (fn [_]
                                       (println "ON")

@@ -28,14 +28,14 @@
   setter <- (w/asks :set-active)
   ((or setter default-setter) signal))
 
-(defnm raw-from [init e-arg]
+(defnm raw-from [get-init e-arg]
   signal <-
   (mdo
    active <- active-signal
    active --> [(hot-swap! active e-arg)
                active]
    let [e-internal (e/on! (e/Event))
-        sval (atom init)
+        sval (atom (get-init))
         changed (->> e-internal
                      e/flatten
                      (e/filter #(not= %1 @sval))
@@ -58,7 +58,10 @@
   [signal])
 
 (defnm from [init e]
-  (step ::from (raw-from init e)))
+  (step ::from (raw-from #(-> init) e)))
+
+(defnm const [val]
+  (step ::const (raw-from #(-> val) e/never)))
 
 (defn build [b]
   (let [{:keys [result writer]} (w/exec {} b)]
@@ -70,17 +73,17 @@
   (e/join-skip-siblings (inst! se) (e/flatten (changed se))))
 
 (defn map [f s]
-  (step ::map (raw-from (f (inst! s)) (e/map f (changed s)))))
+  (step ::map (raw-from #(f (inst! s)) (e/map f (changed s)))))
 
 (defnm reduce [r i-arg e]
   (step ::reduce
         (mdo active <- active-signal
              reader <- w/ask
              let [i (if active (inst! active) i-arg)]
-             (raw-from i (e/reduce r i e)))))
+             (raw-from #(-> i) (e/reduce r i e)))))
 
 (defnm zip-with [f & sigs]
   (step ::zip-with
         (mdo let [e-changed (apply e/join-skip-siblings (core/map changed sigs))
                   val! (varg# (apply f (core/map inst! sigs)))]
-             (raw-from (val!) (e/map val! e-changed)))))
+             (raw-from val! (e/map val! e-changed)))))

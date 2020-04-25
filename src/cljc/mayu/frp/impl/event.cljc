@@ -30,11 +30,10 @@
 
 (defn never? [e] (= 0 (:id @(:state e))))
 
-;; TODO make deps arg a function that returns deps on-required
 (defn Event
   ([] (Event (fn [_] (fn [])) nil))
   ([on-required] (Event on-required nil))
-  ([on-required deps]
+  ([on-required get-deps]
    (let [id @next-event-id]
      (swap! next-event-id inc)
      (->RawEvent (atom {:id id
@@ -42,8 +41,9 @@
                         :next-sub-id 1
                         :on-required on-required
                         :off-callback (fn [])
-                        :source? (nil? deps)
-                        :deps (or deps [id])
+                        :source? (nil? get-deps)
+                        :get-deps (or get-deps #(-> [id]))
+                        :deps []
                         :pushes 1
                         :on? false
                         :num-awaiting 0
@@ -118,14 +118,15 @@
   (if (never? e)
     (fn [])
     (let [{:keys [state]} e
-          {:keys [next-sub-id on-required id pushes]} @state
+          {:keys [next-sub-id on-required get-deps id pushes]} @state
           sub-count (fn [] (count (:subs @state)))]
       (swap! state #(-> %1
                        (assoc :next-sub-id (inc next-sub-id))
                        (assoc-in [:subs next-sub-id] on)))
       (when (= 1 (sub-count))
         (swap! global-push-counts #(assoc %1 id pushes))
-        (swap! state (curry assoc :off-callback (on-required #(send! e %1)))))
+        (swap! state (curry assoc :off-callback (on-required #(send! e %1))))
+        (swap! state (curry assoc :deps (get-deps))))
       (fn []
         (swap! state (curry update :subs #(dissoc %1 next-sub-id)))
         (when (= 0 (sub-count))
@@ -142,7 +143,7 @@
           #(subscribe! e (fn [msg]
                            (when (push? msg)
                              (% (merge msg {:src ::none :count 0})))))
-          []))))
+          #(-> [])))))
 
 (defn map [f e]
   (if (never? e)
@@ -152,7 +153,7 @@
                            (% (if (push? msg)
                                 (update msg :val f)
                                 msg))))
-          (:deps @(:state e))))))
+          #(:deps @(:state e))))))
 
 (defn reduce [r i e]
   (if (never? e)
@@ -164,7 +165,7 @@
                                (do (swap! a-acc (fn [acc] (r acc val)))
                                    (% (assoc msg :val @a-acc)))
                                (% msg))))
-            (:deps @(:state e)))))))
+            #(:deps @(:state e)))))))
 
 (defn filter [p e]
   (if (never? e)
@@ -175,7 +176,7 @@
                          (cond (and (push? msg)
                                     (not (p val))) (% (->Src src count))
                                :else (% msg))))
-          (:deps @(:state e))))))
+          #(:deps @(:state e))))))
 
 (defn join-to-deps [dep-data]
   (->> @dep-data vals (core/reduce merge {}) keys))
@@ -241,15 +242,18 @@
 
         perform-join
         (fn [events]
-          (let [init-dep-data
-                (core/reduce #(let [{:keys [id deps]} @(:state %2)]
-                                (assoc %1 id (init-dep-counts deps)))
-                             {}
-                             events)
-                stashes (atom {})
-                dep-data (atom init-dep-data)]
+          (let [stashes (atom {})
+                dep-data (atom {})]
             (on! (Event #(on-required events dep-data stashes %1)
-                        (join-to-deps dep-data)))))]
+                        (fn []
+                          (reset! dep-data
+                                  (core/reduce #(let [{:keys [id deps]}
+                                                      @(:state %2)]
+                                                  (assoc %1 id
+                                                         (init-dep-counts deps)))
+                                               {}
+                                               events))
+                          (join-to-deps dep-data))))))]
     (case (count events)
       0 never
       1 (map #(-> {:val %1 :sent-sibling? false}) (first events))
@@ -267,9 +271,9 @@
     never
     (let [curr-off (atom (fn []))
           full-off (atom (fn []))
-          {:keys [id deps]} @(:state e)
+          {:keys [id]} @(:state e)
           inner-deps (atom {})
-          outer-deps (atom (init-dep-counts deps))
+          outer-deps (atom {})
           inner-stashes (atom {})
           outer-stashes (atom {})
 
@@ -369,7 +373,9 @@
                 (reset! inner-stashes {})
                 (reset! curr-off (fn []))
                 (reset! full-off (fn []))))
-            (to-deps))))))
+            (fn []
+              (reset! outer-deps (init-dep-counts (:deps @(:state e))))
+              (to-deps)))))))
 
 (defn flatten [ee] (flat-map identity ee))
 
@@ -392,7 +398,7 @@
                                (quick-off)
                                (>! off-channel off)))
                          (fn [] (go ((<! off-channel)))))
-                       [])
+                       #(-> []))
          res (f e-init)
          e (from-res res)
          ;; TODO this is a hack but Im not sure why its needed
@@ -423,7 +429,7 @@
                              (reset! on? false)
                              (@off-fn)
                              (reset! off-fn (fn []))))))
-                   (:deps @(:state e))))))))
+                   #(:deps @(:state e))))))))
 
 (defn throttle [e ms]
   (let [sender (atom (fn [_]))
@@ -449,7 +455,7 @@
                                                   (recur))
                                               (reset! throttling false))))))))]
                 (fn [] (off) (reset! sender (fn [_])))))
-            []))))
+            #(-> [])))))
 
 (defn defer [e ms]
   (let [sender (atom (fn [_]))
@@ -464,7 +470,7 @@
                                     (go (<! (timeout ms))
                                         (send! msg)))))]
                 (fn [] (off) (reset! sender (fn [_])))))
-            []))))
+            #(-> [])))))
 
 (defn timer [ms]
   (let [c (chan 1)]
@@ -477,7 +483,7 @@
                            (>! c :on)
                            (recur))))
                      (fn [] (go (>! c :off))))
-                []))))
+                #(-> [])))))
 
 (extend-protocol Monoid
   RawEvent

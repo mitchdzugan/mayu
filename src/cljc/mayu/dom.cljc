@@ -16,6 +16,8 @@
              :refer [defnm defm mdo fnm <#>]])
   #?(:cljs (:require-macros [mayu.dom :refer [mk-ons]])))
 
+;; TODO investigate rapid binds probably has to do with mutually defined sigs
+
 (defm env (w/asks :env))
 
 (defnm envs [f]

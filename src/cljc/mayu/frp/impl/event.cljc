@@ -10,6 +10,8 @@
             #?(:clj [clojure.pprint :refer [pprint]]
                :cljs [cljs.pprint :refer [pprint]])))
 
+; TODO throw error on recursive def. will cause problems but def needed
+
 (defrecord Push [val src count])
 (defrecord Src [src count])
 (defrecord Deps [deps])

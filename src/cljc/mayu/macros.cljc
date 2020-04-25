@@ -68,6 +68,13 @@
                                             ~(nth args 1)
                                             (ui ~@(drop 1 (nth args 3)))
                                             (ui ~@(drop 1 (nth args 5))))
+                 'multi (let [[pre _ multis] (partition-by #(= %1 '$=) args)]
+                          (concat pre [(->> multis
+                                            (filter vector?)
+                                            (reduce (fn [agg [id & body]]
+                                                      (assoc agg id
+                                                             `(ui ~@body)))
+                                                    {}))]))
                  (let [f (cond
                            (get tags/tag-map (name f))
                            `(partial mayu.dom/create-element ~(name f))

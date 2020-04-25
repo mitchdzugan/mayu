@@ -159,7 +159,21 @@
       <[score-display score]
       <[change-score-button -1]>]])
 
+(defui switcher [n child-map]
+  <[case (odd? n)
+    <[true (:odd child-map)]
+    <[false (:even child-map)]])
+
 (defui special-syms []
+  <[multi switcher 1 $=
+    <[:odd <[p "odd"]]
+    <[:even <[p "even"]]]
+  <[multi switcher 2 $=
+    <[:odd <[p "odd"]]
+    <[:even <[p "even"]]]
+  <[multi switcher 3 $=
+    <[:odd <[p "odd"]]
+    <[:even <[p "even"]]]
   <[ul $=
     <[for ["this" "is" "a" "list"] $[s]=
       <[li s]]]

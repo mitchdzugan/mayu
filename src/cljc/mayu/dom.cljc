@@ -243,7 +243,18 @@
   (step ::memo
         (mdo memos <- (w/asks :memos)
              path <- curr-path
-             [nil])))
+             let [memo (get @memos path)
+                  skip? (and memo (= (:via memo) via))]
+             skip? --> (mdo (w/eachm (-> memo :writer :mdom)
+                                     #(w/tell {:mdom %1}))
+                            (w/eachm (keys (-> memo :writer :events))
+                                     (fn [k]
+                                       (w/eachm (-> memo :writer :events (get k))
+                                                #(w/tell {:events {k %1}}))))
+                            [(:res memo)])
+             [res writer] <- (w/listen m)
+             [(swap! memos #(assoc %1 path {:via via :res res :writer writer}))]
+             [res])))
 
 (defnm keyed [k m]
   (step k (mdo (w/modify #(assoc %1 :key k))

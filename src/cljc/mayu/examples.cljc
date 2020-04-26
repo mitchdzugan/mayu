@@ -153,6 +153,9 @@
                                                   (dom/on-click btn))
                                            s-timer))
             <[dom/bind s-timer $[timer]=
+              <[dom/memo true $=
+                [(println "rendering memo")]
+                <[p "hello"]]
               <[p (str timer)]]
             <[div (str "Score2: " score2)]]]]
       <[change-score-button 1]>
@@ -309,7 +312,25 @@
     s-c2 <- (s/map dec s-counter)
     <[dom/bind s-counter $[counter]= <[p (str counter)]]
     <[dom/bind s-c1 $[c1]= <[p (str c1)]]
-    <[dom/bind s-c2 $[c2]= <[p (str c2)]]])
+    <[dom/bind s-c2 $[c2]= <[p (str c2)]]]
+  )
+
+(defui min-repro-2 []
+  <[dom/collect-and-reduce ::counter inc 0 $=
+    <[button "Click"] btn >
+    (dom/emit ::counter (dom/on-click btn))
+    s-counter <- (dom/envs ::counter)
+    s-mod <- (s/map #(mod % 2) s-counter)
+    <[dom/bind s-mod $[mod]=
+      <[case mod
+        <[0
+          <[p "Even Page"]
+          s-c2 <- (s/map dec s-counter)
+          <[dom/bind s-c2 $[c2]= <[p (str "c2:" c2)]]]
+        <[1
+          <[p "Odd Page"]
+          s-c2 <- (s/map inc s-counter)
+          <[dom/bind s-c2 $[c2]= <[p (str "c2:" c2)]]]]]])
 
 (defui my-ui []
   [(let [c (dom/render-to-string {} ssr-await-demo)]
@@ -318,6 +339,7 @@
          (when more
            (println more)
            (recur)))))]
+  <[min-repro-2]
   <[ssr-await-demo]
   <[min-repro]
   <[animations-demo]

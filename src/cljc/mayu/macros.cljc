@@ -75,6 +75,7 @@
                                                       (assoc agg id
                                                              `(ui ~@body)))
                                                     {}))]))
+                 'keyed `(dom/keyed ~(nth args 0) (ui ~@(drop 1 args)))
                  (let [f (cond
                            (get tags/tag-map (name f))
                            `(partial mayu.dom/create-element ~(name f))

@@ -34,13 +34,15 @@
 
 (defnm text [& s] (w/tell {:mdom (->MText (apply str s))}))
 
-(defm curr-path
-  {:keys [path last-unique-step]} <- w/ask
-  [(conj path last-unique-step)])
-
 (defm curr-unique-path
   {:keys [unique-path last-unique-step]} <- w/ask
   [(conj unique-path last-unique-step)])
+
+;; TODO see if we can ever use non-unique path
+(def curr-path curr-unique-path)
+#_(defm curr-path
+  {:keys [path last-unique-step]} <- w/ask
+  [(conj path last-unique-step)])
 
 (defnm step [label m]
   {:keys [label-counts]} <- w/get
@@ -125,8 +127,18 @@
                      [arg (w/pure nil)]
                      [{} arg])]
      (create-element tag attrs m)))
-  ([tag attrs m-]
-   let [m (if (string? m-) (text m-) m-)]
+  ([tag attrs- m-]
+   let [to-single #(reduce str "" (interpose " " %))]
+   let [attrs (if (contains? attrs- :class)
+                (update attrs- :class
+                        #(cond (map? %1) (->> (keys %1)
+                                              (filter (partial get %1))
+                                              (map name)
+                                              to-single)
+                               (coll? %1) (to-single %1)
+                               :else %1))
+                attrs-)
+        m (if (string? m-) (text m-) m-)]
    {:keys [key]} <- w/get
    (w/pass (step tag (inner-create-element key tag attrs m)))))
 

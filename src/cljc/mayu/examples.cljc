@@ -16,7 +16,7 @@
     <[dom/stash $=
       <[li "was"]
       <[li "out"]
-      <[dom/keyed "Test" $=
+      <[keyed "Test"
         <[li "of"]]
       <[li "order"]
       ] stashed >
@@ -142,7 +142,7 @@
     [(println "Rendering Component Top Level")]
     s-score <- (dom/envs ::score)
     <[dom/bind s-score $[score]=
-      <[dom/keyed score $=
+      <[keyed score
         <[dom/collect-and-reduce ::score2 #(-> %2) 0 $=
           s-score2 <- (dom/envs ::score2)
           <[button "Inc scores"] btn >
@@ -184,7 +184,7 @@
   <[case 3
     <[4 <[p "not this"]]
     <[2 <[p "noep"]]
-    <[:else <[p "none of the above"]]]
+    <[:else <[p {:class {:a true :b false}} "none of the above"]]]
   <[condp = 3
     <[4 <[p "not this"]]
     <[3 <[p "This!"]]
@@ -271,7 +271,7 @@
     <[button {:style {:margin-left "55px"}} "+"] btn >
     (dom/emit ::items (e/map (varg# (->Append)) (dom/on-click btn)))
     <[for items $[{:keys [id]}]=
-      <[dom/keyed id $=
+      <[keyed id
         <[div {:style {:display "flex"
                        :align-items "stretch"
                        :margin "5px"
@@ -288,7 +288,7 @@
   s-timer <- (s/reduce inc 0 (e/timer 1000))
   <[dom/bind s-timer $[timer]=
     <[ul $=
-      <[li "Begin"]
+      <[li {:class {:a true :b false :c true}} "Begin"]
       <[ssr-await (>= timer 2) 4000
         <[timeout <[li "Failed to load in time"]]
         <[then    <[li "Slow loading 1"]]]
@@ -298,7 +298,18 @@
       <[ssr-await (>= timer 2) 4000
         <[timeout <[li "Failed to load in time"]]
         <[then    <[li "Slow loading 3"]]]
-      <[li "End"]]])
+      <[li {:class ["a" "b"]} "End"]]])
+
+(defui min-repro []
+  <[dom/collect-and-reduce ::counter inc 0 $=
+    <[button "Click"] btn >
+    (dom/emit ::counter (dom/on-click btn))
+    s-counter <- (dom/envs ::counter)
+    s-c1 <- (s/map inc s-counter)
+    s-c2 <- (s/map dec s-counter)
+    <[dom/bind s-counter $[counter]= <[p (str counter)]]
+    <[dom/bind s-c1 $[c1]= <[p (str c1)]]
+    <[dom/bind s-c2 $[c2]= <[p (str c2)]]])
 
 (defui my-ui []
   [(let [c (dom/render-to-string {} ssr-await-demo)]
@@ -307,6 +318,8 @@
          (when more
            (println more)
            (recur)))))]
+  <[ssr-await-demo]
+  <[min-repro]
   <[animations-demo]
   <[syntax-demo]
   <[inputs-demo]

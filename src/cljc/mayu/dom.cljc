@@ -174,6 +174,8 @@
       (reduce-kv reducer {} m))))
 
 (defn off-bind [{{:keys [memos signals binds offs]} :state :as bind}]
+  (doseq [[_ memo] @memos]
+    (off-bind memo))
   (reset! memos {})
   (doseq [off @offs]
     (off))
@@ -184,6 +186,20 @@
   (doseq [[_ bind] @binds]
     (off-bind bind))
   (reset! binds {}))
+
+(defn pre-render [state]
+  (swap! (:signals state) reset-used)
+  (swap! (:binds state) reset-used)
+  (swap! (:offs state) (fn [offs]
+                        (doseq [off offs]
+                          (off))
+                         [])))
+
+(defn post-render [state]
+  (swap! (:signals state)
+         (check-used (fn [{:keys [off]}] (off))))
+  (swap! (:binds state)
+         (check-used off-bind)))
 
 (defnm bind [s f]
   (step ::bind
@@ -202,20 +218,12 @@
          split-id <- (w/gets :split-id)
          s-split-id <- (s/from split-id e/never)
          s-shadowed <- (s/from (s/inst! s) (e/shadow (s/changed s)))
-         s-exec <- (s/map #(do (swap! (:signals bind) reset-used)
-                               (swap! (:binds bind) reset-used)
-                               (swap! (:offs bind) (fn [offs]
-                                                     (doseq [off offs]
-                                                       (off))
-                                                     []))
+         s-exec <- (s/map #(do (pre-render bind)
                                (let [res (->> (w/local (curry merge bind) (f %1))
                                               (w/exec {:init-writer init-writer
                                                        :init-state {:split-id (s/inst! s-split-id)}
                                                        :reader reader}))]
-                                 (swap! (:signals bind)
-                                        (check-used (fn [{:keys [off]}] (off))))
-                                 (swap! (:binds bind)
-                                        (check-used off-bind))
+                                 (post-render bind)
                                  res))
                           s-shadowed)
          (w/modify #(assoc %1 :split-id (get-in (s/inst! s-exec)
@@ -244,7 +252,12 @@
         (mdo memos <- (w/asks :memos)
              path <- curr-path
              let [memo (get @memos path)
-                  skip? (and memo (= (:via memo) via))]
+                  skip? (and memo (= (:via memo) via))
+                  state (or (:state memo)
+                            {:memos (atom {})
+                             :signals (atom {})
+                             :binds (atom {})
+                             :offs (atom [])})]
              skip? --> (mdo (w/eachm (-> memo :writer :mdom)
                                      #(w/tell {:mdom %1}))
                             (w/eachm (keys (-> memo :writer :events))
@@ -252,8 +265,14 @@
                                        (w/eachm (-> memo :writer :events (get k))
                                                 #(w/tell {:events {k %1}}))))
                             [(:res memo)])
-             [res writer] <- (w/listen m)
-             [(swap! memos #(assoc %1 path {:via via :res res :writer writer}))]
+             [(pre-render state)]
+             [res writer] <- (w/local (curry merge state)
+                                      (w/listen m))
+             [(post-render state)]
+             [(swap! memos #(assoc %1 path {:via via
+                                            :res res
+                                            :writer writer
+                                            :state state}))]
              [res])))
 
 (defnm keyed [k m]

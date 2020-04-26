@@ -162,6 +162,29 @@
       <[score-display score]
       <[change-score-button -1]>]])
 
+(defui memo-test []
+  <[dom/collect-and-reduce ::score #(+ %1 %2) 0 $=
+    <[dom/collect-and-reduce ::score3 inc 0 $=
+      s-score3 <- (dom/envs ::score3)
+      <[button "Inc scores 3"] btn >
+      (dom/emit ::score3 (dom/on-click btn))
+      [(println "Rendering Component Top Level")]
+      s-score <- (dom/envs ::score)
+      <[dom/bind s-score $[score]=
+        <[keyed (quot score 4)
+          <[dom/bind s-score3 $[score3]=
+            <[div (str "Score3: " score3)]
+            <[dom/memo true $=
+              <[dom/collect-and-reduce ::score2 inc 0 $=
+                s-score2 <- (dom/envs ::score2)
+                <[button "Inc scores"] btn >
+                (dom/emit ::score2 (dom/on-click btn))
+                <[dom/bind s-score2 $[score2]=
+                  <[div (str "Score2: " score2)]]]]]]
+        <[change-score-button 1]>
+        <[score-display score]
+        <[change-score-button -1]>]]])
+
 (defui switcher [n child-map]
   <[case (odd? n)
     <[true (:odd child-map)]
@@ -346,6 +369,7 @@
   <[syntax-demo]
   <[inputs-demo]
   <[offs-test]
+  <[memo-test]
   <[stash-demo1]
   <[stash-demo2]
   <[stash-demo3]

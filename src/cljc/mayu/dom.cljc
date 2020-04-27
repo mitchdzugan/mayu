@@ -188,6 +188,7 @@
   (reset! binds {}))
 
 (defn pre-render [state]
+  (swap! (:memos state) reset-used)
   (swap! (:signals state) reset-used)
   (swap! (:binds state) reset-used)
   (swap! (:offs state) (fn [offs]
@@ -199,6 +200,8 @@
   (swap! (:signals state)
          (check-used (fn [{:keys [off]}] (off))))
   (swap! (:binds state)
+         (check-used off-bind))
+  (swap! (:memos state)
          (check-used off-bind)))
 
 (defnm bind [s f]
@@ -264,12 +267,14 @@
                                      (fn [k]
                                        (w/eachm (-> memo :writer :events (get k))
                                                 #(w/tell {:events {k %1}}))))
-                            [(:res memo)])
+                            [(swap! memos #(assoc-in %1 [path :used?] true))
+                             (:res memo)])
              [(pre-render state)]
              [res writer] <- (w/local (curry merge state)
                                       (w/listen m))
              [(post-render state)]
-             [(swap! memos #(assoc %1 path {:via via
+             [(swap! memos #(assoc %1 path {:used? true
+                                            :via via
                                             :res res
                                             :writer writer
                                             :state state}))]

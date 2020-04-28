@@ -294,28 +294,25 @@
 
 (defui animations-demo []
   <[dom/collect-reduce-and-bind ::items (a/flip reduce-action) [] $[items]=
-    [(println items)]
-    <[keyed items
-      <[dom/collect-reduce-and-bind ::counter inc 0 $[counter]=
-        [(println [:in items])]
-        <[button "INC"] btn1 >
-        <[p (str "counter " counter)]
-        (dom/emit ::counter (dom/on-click btn1))
-        <[button {:style {:margin-left "55px"}} "+"] btn >
-        (dom/emit ::items (e/map (varg# (->Append)) (dom/on-click btn)))
-        <[for items $[{:keys [id]}]=
-          <[keyed id
-            <[div {:style {:display "flex"
-                           :align-items "stretch"
-                           :margin "5px"
-                           :transition "transform 0.4s"
-                           :transform "scale(0, 0)"
-                           :delayed {:transform "scale(1, 1)"}
-                           :remove {:transform "scale(0, 0)"}}} $=
-              <[div {:style {:background-color "#74f7df"
-                             :width "50px"}}]
-              <[button "x"] btn >
-              (dom/emit ::items (e/map (varg# (->Remove id)) (dom/on-click btn)))]]]]]])
+    <[dom/collect-reduce-and-bind ::counter inc 0 $[counter]=
+      <[button "INC"] btn1 >
+      <[p (str "counter " counter)]
+      (dom/emit ::counter (dom/on-click btn1))
+      <[button {:style {:margin-left "55px"}} "+"] btn >
+      (dom/emit ::items (e/map (varg# (->Append)) (dom/on-click btn)))
+      <[for items $[{:keys [id]}]=
+        <[keyed id
+          <[div {:style {:display "flex"
+                         :align-items "stretch"
+                         :margin "5px"
+                         :transition "transform 0.4s"
+                         :transform "scale(0, 0)"
+                         :delayed {:transform "scale(1, 1)"}
+                         :remove {:transform "scale(0, 0)"}}} $=
+            <[div {:style {:background-color "#74f7df"
+                           :width "50px"}}]
+            <[button "x"] btn >
+            (dom/emit ::items (e/map (varg# (->Remove id)) (dom/on-click btn)))]]]]])
 
 (defui ssr-await-demo []
   s-timer <- (s/reduce inc 0 (e/timer 1000))
@@ -363,25 +360,25 @@
           <[dom/bind s-c2 $[c2]= <[p (str "c2:" c2)]]]]]])
 
 (defui my-ui []
-  #_[(let [c (dom/render-to-string {} ssr-await-demo)]
+  [(let [c (dom/render-to-string {} ssr-await-demo)]
      (go-loop []
        (let [more (<! c)]
          (when more
            (println more)
            (recur)))))]
-  #_[min-repro-2]
-  #_[ssr-await-demo]
-  #_[min-repro]
+  <[min-repro-2]
+  <[ssr-await-demo]
+  <[min-repro]
   <[animations-demo]
-  #_[syntax-demo]
-  #_[inputs-demo]
-  #_[offs-test]
-  #_[memo-test]
-  #_[stash-demo1]
-  #_[stash-demo2]
-  #_[stash-demo3]
-  #_[countdown]
-  #_[scores]
-  #_[special-syms])
+  <[syntax-demo]
+  <[inputs-demo]
+  <[offs-test]
+  <[memo-test]
+  <[stash-demo1]
+  <[stash-demo2]
+  <[stash-demo3]
+  <[countdown]
+  <[scores]
+  <[special-syms])
 
 

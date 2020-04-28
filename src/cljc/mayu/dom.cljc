@@ -204,6 +204,7 @@
   (swap! (:memos state)
          (check-used off-bind)))
 
+(def bind-count (atom 0))
 (defnm bind [s f]
   (step ::bind
         (mdo
@@ -221,28 +222,38 @@
          split-id <- (w/gets :split-id)
          s-split-id <- (s/from split-id e/never)
          s-shadowed <- (s/from (s/inst! s) (e/shadow (s/changed s)))
-         s-exec <- (s/map #(do (pre-render bind)
-                               (let [res (->> (w/local (curry merge bind) (f %1))
-                                              (w/exec {:init-writer init-writer
-                                                       :init-state {:split-id (s/inst! s-split-id)}
-                                                       :reader reader}))]
-                                 (post-render bind)
-                                 res))
-                          s-shadowed)
-         (w/modify #(assoc %1 :split-id (get-in (s/inst! s-exec)
-                                                [:state :split-id])))
-         s-writer <- (s/map :writer s-exec)
-         s-events <- (s/map :events s-writer)
-         s-result <- (s/map :result s-exec)
-         s-mdom <- (s/map :mdom s-writer)
-         (w/tell {:mdom (->MBind s-mdom)})
-         (emit ::request-render (e/shadow (s/changed s-mdom)))
-         (w/eachm (keys (:events init-writer))
-                  #(step %1 (mdo s-event <- (s/map (fn [events]
-                                                     (apply e/join (%1 events)))
-                                                   s-events)
-                                 (emit %1 (e/shadow (s/unwrap-event s-event))))))
-         [s-result])))
+         [(swap! bind-count inc)]
+         (step @bind-count
+               (mdo
+                s-exec <-
+                (s/map #(do (pre-render bind)
+                            (let [split-id (s/inst! s-split-id)
+                                  res (->> (w/local (curry merge bind) (f %1))
+                                           (w/exec {:init-writer init-writer
+                                                    :init-state {:split-id
+                                                                 split-id}
+                                                    :reader reader}))]
+                              (post-render bind)
+                              res))
+                       s-shadowed)
+                (w/modify #(assoc %1 :split-id (get-in (s/inst! s-exec)
+                                                       [:state :split-id])))
+                s-writer <- (s/map :writer s-exec)
+                s-events <- (s/map :events s-writer)
+                s-result <- (s/map :result s-exec)
+                s-mdom <- (s/map :mdom s-writer)
+                (w/tell {:mdom (->MBind s-mdom)})
+                (emit ::request-render (e/shadow (s/changed s-mdom)))
+                (w/eachm (keys (:events init-writer))
+                         #(step %1 (mdo s-event <-
+                                        (s/map (fn [events]
+                                                 (apply e/join (%1 events)))
+                                               s-events)
+                                        (->> s-event
+                                             s/unwrap-event
+                                             e/shadow
+                                             (emit %1)))))
+                [s-result])))))
 
 (defnm consume! [t f]
   let [event? (nil? (:inst! t))

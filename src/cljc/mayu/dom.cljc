@@ -221,7 +221,7 @@
                             (assoc-in [path :state] bind)))]
          split-id <- (w/gets :split-id)
          s-split-id <- (s/from split-id e/never)
-         s-shadowed <- (s/from (s/inst! s) (e/shadow (s/changed s)))
+         s-shadowed <- (s/shadow s)
          [(swap! bind-count inc)]
          (step @bind-count
                (mdo

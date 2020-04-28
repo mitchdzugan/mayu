@@ -87,3 +87,6 @@
         (mdo let [e-changed (apply e/join-skip-siblings (core/map changed sigs))
                   val! (varg# (apply f (core/map inst! sigs)))]
              (raw-from val! (e/map val! e-changed)))))
+
+(defnm shadow [s]
+  (step ::shadow (raw-from #(inst! s) (e/shadow (changed s)))))

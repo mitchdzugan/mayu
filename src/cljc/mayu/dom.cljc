@@ -241,7 +241,7 @@
                   #(step %1 (mdo s-event <- (s/map (fn [events]
                                                      (apply e/join (%1 events)))
                                                    s-events)
-                                 (emit %1 (s/unwrap-event s-event)))))
+                                 (emit %1 (e/shadow (s/unwrap-event s-event))))))
          [s-result])))
 
 (defnm consume! [t f]

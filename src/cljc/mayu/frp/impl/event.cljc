@@ -203,7 +203,7 @@
   (let [{:keys [val src count]} msg
         {:keys [id]} @(:state e)]
     (if (= ::none src)
-      (send-self! msg)
+      (send-self! (assoc msg :val {:val val :sent-sibling? false}))
       (let [sendable? (->> (dissoc @dep-data id)
                            vals
                            (every? #(= (get %1 src count) count)))

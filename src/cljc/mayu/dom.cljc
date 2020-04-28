@@ -157,9 +157,7 @@
                                  #(mdo [res w] <- (w/listen (mf %1))
                                        let [e (->> [:events k]
                                                    (get-in w)
-                                                   (map e/shadow)
-                                                   (apply e/join)
-                                                   e/shadow)]
+                                                   (apply e/join))]
                                        [{:res res :e e}]))
                      [[res (curry update :events #(dissoc %1 k))]]))))
 
@@ -249,10 +247,7 @@
                 (w/eachm (keys (:events init-writer))
                          #(step %1 (mdo s-event <-
                                         (s/map (fn [events]
-                                                 (->> (%1 events)
-                                                      (map e/shadow)
-                                                      (apply e/join)
-                                                      e/shadow))
+                                                 (apply e/join (%1 events)))
                                                s-events)
                                         (->> s-event
                                              s/unwrap-event

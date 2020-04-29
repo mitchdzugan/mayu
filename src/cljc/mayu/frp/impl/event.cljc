@@ -487,6 +487,29 @@
                      (fn [] (go (>! c :off))))
                 #(-> [])))))
 
+(defn dedup [e]
+  (let [set? (atom false)
+        last (atom nil)]
+    (if (never? e)
+      never
+      (on! (Event
+            #(let [off (subscribe! e
+                                   (fn [{:keys [val src count] :as msg}]
+                                     (cond (push? msg)
+                                           (let [was? @set?
+                                                 curr @last]
+                                             (reset! set? true)
+                                             (reset! last val)
+                                             (if (or (not was?)
+                                                     (not= curr val))
+                                               (% msg)
+                                               (% (->Src src count))))
+                                           :else (% msg))))]
+               (fn []
+                 (reset! set? false)
+                 (off)))
+            #(:deps @(:state e)))))))
+
 (extend-protocol Monoid
   RawEvent
   (mappend [e1 e2] (join e1 e2))

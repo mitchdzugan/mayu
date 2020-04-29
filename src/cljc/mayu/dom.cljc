@@ -94,13 +94,13 @@
 (defnm inner-create-element [key tag attrs m]
   path <- curr-unique-path
   res <- m
-  {:keys [e-el]} <- w/ask
+  {:keys [e-render-info]} <- w/ask
   let [make-event-from-target
        (fn [target]
-         (->> e-el
-              (e/filter #(= (:path %1) path))
-              (e/map :el)
+         (->> e-render-info
+              (e/map #(get-in %1 [:els path]))
               e/shadow
+              e/dedup
               (e/flat-map
                (fn [el]
                  (let [existing (aget el "__mayu_events")]
@@ -362,8 +362,8 @@
                                    :off (fn [] (s/off! signal))
                                    :used? true}))])
 
-(defn run [e-el ssr? env m use-mdom]
-  (let [reader {:e-el e-el
+(defn run [e-render-info ssr? env m use-mdom]
+  (let [reader {:e-render-info e-render-info
                 :ssr? ssr?
                 :step-fn step
                 :active-signal active-signal

@@ -49,6 +49,8 @@
 
 (def timer e/timer)
 
+(def dedup e/dedup)
+
 (defn tag-with [f e s]
   (->> e
        (map #(-> [true %1]))

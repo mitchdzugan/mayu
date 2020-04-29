@@ -31,6 +31,8 @@
 
 (def filter e/filter)
 
+(def remove e/remove)
+
 (def join e/join)
 
 (def join-skip-siblings e/join-skip-siblings)

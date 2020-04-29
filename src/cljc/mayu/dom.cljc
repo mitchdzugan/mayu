@@ -98,8 +98,9 @@
   let [make-event-from-target
        (fn [target]
          (->> e-render-info
-              (e/map #(get-in %1 [:els path]))
               e/shadow
+              (e/map #(get-in %1 [:els path]))
+              (e/remove nil?)
               e/dedup
               (e/flat-map
                (fn [el]

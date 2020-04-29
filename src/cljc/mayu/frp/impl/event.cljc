@@ -180,6 +180,9 @@
                                :else (% msg))))
           #(:deps @(:state e))))))
 
+(defn remove [p e]
+  (filter (comp not p) e))
+
 (defn join-to-deps [dep-data]
   (->> @dep-data vals (core/reduce merge {}) keys))
 
@@ -225,7 +228,7 @@
             (swap! stashes #(update-in %1 [src count] (curry conj send!)))))))))
 
 (defn raw-join [& arg-events]
-  (let [events (remove never? arg-events)
+  (let [events (core/remove never? arg-events)
 
         on-required
         (fn [events dep-data stashes send-self!]

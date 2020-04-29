@@ -50,9 +50,7 @@
   (let [el (aget vnode "elm")
         data (or (aget vnode "data") #js{})
         path (aget data "path")]
-    (swap! g-render-info #(-> %1
-                              (assoc-in [:els path] el)
-                              (assoc-in [:rendered path] true)))))
+    (swap! g-render-info #(assoc-in %1 [:els path] el))))
 
 (declare thunk)
 
@@ -144,6 +142,7 @@
 
   !mdom/MCreateElement
   (let [{:keys [tag key path attrs children]} mdom]
+    (swap! g-render-info #(assoc-in %1 [:used path] true))
     [(->TCreateElement tag key path attrs (mapcat to-tdoms children))])
 
   !mdom/MBind
@@ -154,6 +153,8 @@
 
 (defn post-render [e-render-info render-info]
   (fn []
+    (swap! g-render-info #(assoc %1 :els (select-keys (:els %1)
+                                                      (keys (:used %1)))))
     (e/push! e-render-info @render-info)))
 
 (defn attach [id env ui]
@@ -169,6 +170,7 @@
                          (.-default style)])]
     (dom/run e-render-info false env ui
       #(binding [g-render-info render-info]
+         (swap! g-render-info (curry assoc :used {}))
          (let [vdom (h "div" (clj->js {:attrs {:id id}})
                        (clj->js (->> %1
                                      (mapcat to-tdoms)

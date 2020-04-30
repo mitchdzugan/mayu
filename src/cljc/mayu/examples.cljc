@@ -359,6 +359,36 @@
           s-c2 <- (s/map inc s-counter)
           <[dom/bind s-c2 $[c2]= <[p (str "c2:" c2)]]]]]])
 
+(defn logger [k]
+  (fn [a]
+    (#?(:clj println :cljs js/console.log) k a)))
+
+(defui min-repro-3 []
+  <[div {:class "a"} $=
+    e-mount <- dom/get-mount-event
+    (dom/consume! e-mount (logger :a))
+    <[dom/collect-reduce-and-bind :c1 inc 0 $[c1]=
+      <[div {:class "b"} $=
+        e-mount <- dom/get-mount-event
+        (dom/consume! e-mount (logger :b))]
+      <[keyed (quot c1 3)
+        <[div {:class "c"} $=
+          e-mount <- dom/get-mount-event
+          (dom/consume! e-mount (logger :c))]
+        <[dom/collect-reduce-and-bind :c2 inc 0 $[c2]=
+          <[p $= <[span (str "c1 " c1)]]
+          <[p $= <[span (str "c2 " c2)]]
+          <[button "b1"] b1 >
+          <[button "b2"] b2 >
+          (dom/emit :c1 (dom/on-click b1))
+          (dom/emit :c2 (dom/on-click b2))
+          s-c1 <- (dom/envs :c1)
+          <[dom/bind s-c1 $[c1]=
+            <[dom/collect-reduce-and-bind :c3 inc 0 $[c3]=
+              <[button "b2.2"] b3 >
+              (dom/emit :c1 (dom/on-click b3))
+              <[p $= <[span (str "c3 " c3)]]]]]]]])
+
 (defui my-ui []
   [(let [c (dom/render-to-string {} ssr-await-demo)]
      (go-loop []
@@ -367,6 +397,7 @@
            (println more)
            (recur)))))]
   <[min-repro-2]
+  <[min-repro-3]
   <[ssr-await-demo]
   <[min-repro]
   <[animations-demo]

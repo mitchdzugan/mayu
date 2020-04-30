@@ -52,6 +52,14 @@
         path (aget data "path")]
     (swap! g-render-info #(assoc-in %1 [:els path] el))))
 
+(defn push-el-mount [vnode]
+  (let [el (aget vnode "elm")
+        data (or (aget vnode "data") #js{})
+        path (aget data "path")]
+    (swap! g-render-info #(-> %1
+                              (assoc-in [:mounted path] el)
+                              (assoc-in [:els path] el)))))
+
 (declare thunk)
 
 (defprotomethod to-vdoms [tdom]
@@ -86,9 +94,9 @@
                   :mutable mutable
                   :path path
                   :on {:input on-input}
-                  :hook {:insert push-el
+                  :hook {:insert push-el-mount
                          :postpatch push-el}}
-                 (#(if (nil? key) %1 (assoc %1 :key key)))
+                 (#(if (nil? key) %1 (assoc %1 :key (str (hash key)))))
                  ((fn [data]
                     (if (empty? (:style attrs))
                       data
@@ -125,13 +133,18 @@
 (defn thunk-prepatch [prev curr]
   (let [prev-data (or (aget prev "data") #js {})
         curr-data (or (aget curr "data") #js {})
-        prev-args (or (aget prev-data "args") #js {})
-        curr-args (or (aget curr-data "args") #js {})]
+        prev-args (or (aget prev-data "args") [])
+        curr-args (or (aget curr-data "args") [])
+        [_ _ _ path] curr-args]
+    (swap! g-render-info #(assoc-in %1 [:els path] (aget prev "elm")))
     (copy-to-thunk (if (= prev-args curr-args) prev (build-thunk curr)) curr)))
 
 (defn thunk [path tag data children]
-  (let [jsdata #js {:hook #js {:init thunk-init :prepatch thunk-prepatch}
-                    :args [tag data children]}]
+  (let [jsdata #js {:hook #js {:init thunk-init
+                               :prepatch thunk-prepatch
+                               :insert push-el-mount
+                               :postpatch push-el}
+                    :args [tag data children path]}]
     (when (not (nil? (:key data)))
       (aset jsdata "key" (:key data)))
     (h tag jsdata)))
@@ -153,8 +166,7 @@
 
 (defn post-render [e-render-info render-info]
   (fn []
-    (swap! g-render-info #(assoc %1 :els (select-keys (:els %1)
-                                                      (keys (:used %1)))))
+    (swap! g-render-info #(assoc %1 :els (select-keys (:els %1) (keys (:used %1)))))
     (e/push! e-render-info @render-info)))
 
 (defn attach [id env ui]
@@ -170,8 +182,9 @@
                          (.-default style)])]
     (dom/run e-render-info false env ui
       #(binding [g-render-info render-info]
-         (swap! g-render-info (curry assoc :used {}))
-         (let [vdom (h "div" (clj->js {:attrs {:id id}})
+         (swap! g-render-info (curry merge {:mounted {} :used {}}))
+         (let [vdom (h "div"
+                       (clj->js {:attrs {:id id}})
                        (clj->js (->> %1
                                      (mapcat to-tdoms)
                                      (map to-vdoms))))]

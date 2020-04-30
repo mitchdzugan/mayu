@@ -91,9 +91,16 @@
 
 (mk-ons)
 
+(defm get-mount-event
+  {:keys [parent-path e-render-info]} <- w/ask
+  [(->> e-render-info
+        e/shadow
+        (e/map #(get-in %1 [:mounted parent-path]))
+        (e/remove nil?))])
+
 (defnm inner-create-element [key tag attrs m]
   path <- curr-unique-path
-  res <- m
+  res <- (w/local #(merge %1 {:parent-path path}) m)
   {:keys [e-render-info]} <- w/ask
   let [make-event-from-target
        (fn [target]
@@ -259,7 +266,7 @@
 (defnm consume! [t f]
   let [event? (nil? (:inst! t))
        consumer (if event? e/consume! s/consume!)]
-  offs <- (envs :offs)
+  offs <- (w/asks :offs)
   [(swap! offs (curry conj (consumer t f)))])
 
 (defnm memo [via m]

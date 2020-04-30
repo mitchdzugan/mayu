@@ -213,7 +213,7 @@
          (check-used off-bind)))
 
 (def bind-count (atom 0))
-(defnm bind [s f]
+(defnm bind-base [s f proc-input]
   (step ::bind
         (mdo
          init-writer <- w/erased
@@ -229,7 +229,7 @@
                             (assoc-in [path :state] bind)))]
          split-id <- (w/gets :split-id)
          s-split-id <- (s/from split-id e/never)
-         s-shadowed <- (s/shadow s)
+         s-shadowed <- (proc-input s)
          [(swap! bind-count inc)]
          (step @bind-count
                (mdo
@@ -262,6 +262,15 @@
                                              e/shadow
                                              (emit %1)))))
                 [s-result])))))
+
+;; TODO don't shadow input signal
+;; TODO ideally this is the default version
+;; TODO do performance tests to make sure its viable
+(defn bind_ [s f]
+  (bind-base s f w/pure))
+
+(defn bind [s f]
+  (bind-base s f s/shadow))
 
 (defnm consume! [t f]
   let [event? (nil? (:inst! t))

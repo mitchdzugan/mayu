@@ -114,7 +114,7 @@
 
 (defn mount-root []
   (run-frp)
-  (attach/attach "app" {} examples/my-ui))
+  (attach/attach (js/document.getElementById "app") {} examples/my-ui))
 
 (defn init! []
   (mount-root))

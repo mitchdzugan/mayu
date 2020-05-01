@@ -169,10 +169,19 @@
     (swap! g-render-info #(assoc %1 :els (select-keys (:els %1) (keys (:used %1)))))
     (e/push! e-render-info @render-info)))
 
-(defn attach [id env ui]
-  (let [render-info (atom {})
+(defn attach [element env ui]
+  (let [attrs? (.hasAttributes element)
+        raw-attrs (if attrs?
+                    (aget element "attributes")
+                    #js[])
+        attrs-map (->> (range (aget raw-attrs "length"))
+                       (reduce #(assoc %1
+                                       (aget (aget raw-attrs %2) "name")
+                                       (aget (aget raw-attrs %2) "value"))
+                               {}))
+        render-info (atom {})
         e-render-info (e/on! (e/Event))
-        a-prev (atom (.getElementById js/document id))
+        a-prev (atom element)
         patch (init #js [(.-default attrs)
                          (.-default class)
                          (.-default el)
@@ -183,8 +192,8 @@
     (dom/run e-render-info false env ui
       #(binding [g-render-info render-info]
          (swap! g-render-info (curry merge {:mounted {} :used {}}))
-         (let [vdom (h "div"
-                       (clj->js {:attrs {:id id}})
+         (let [vdom (h (aget element "tagName")
+                       (clj->js {:attrs attrs-map})
                        (clj->js (->> %1
                                      (mapcat to-tdoms)
                                      (map to-vdoms))))]

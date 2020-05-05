@@ -15,8 +15,39 @@
          )
 
 #?(:clj
-   (defmacro ui [& body]
-     (let [mk-args
+   (defmacro ui [& raw-body]
+     (let [body
+           (map
+            (fn [prev form]
+              (if (= 'let prev)
+                (->> form
+                     (reduce (fn [{:keys [forms ui-1? ui-2?]} form]
+                               (cond
+                                 ui-1?
+                                 {:forms (conj forms `(fn ~(nth form 1)
+                                                        (ui ~@(drop 2 form))))}
+
+                                 (and ui-2?
+                                      (symbol? form)
+                                      (clojure.string/starts-with? (name form)
+                                                                   "!"))
+                                 {:forms (conj forms form) :ui-2? true}
+
+                                 ui-2?
+                                 {:forms (conj forms form) :ui-1? true}
+
+                                 (= '!ui form)
+                                 {:forms forms :ui-2? true}
+
+                                 :else
+                                 {:forms (conj forms form)}))
+                             {:forms []})
+                     :forms)
+                form))
+            (concat [nil] raw-body)
+            raw-body)
+
+           mk-args
            (fn [els]
              (let [[f & args] els]
                (condp = f

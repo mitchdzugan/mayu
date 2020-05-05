@@ -191,6 +191,29 @@
     <[false (:even child-map)]])
 
 (defui special-syms []
+  ; [(println (macroexpand-1) '(ui))]
+  let [!ui
+       test-ui (fn [a] <[p a])
+
+       !ui
+       !rec
+       rec-1 (fn [n] <[case n
+                       <[0 <[div "1.0"]]
+                       <[:else <[div $=
+                                 <[dom/text (str "1." n)]
+                                 <[rec-1 (dec n)]]]])
+
+       !rec
+       !ui
+       rec-2 (fn [n] <[case n
+                       <[0 <[div "2.0"]]
+                       <[:else <[div $=
+                                 <[dom/text (str "2." n)]
+                                 <[rec-2 (dec n)]]]])]
+  <[rec-1 4]
+  <[rec-2 4]
+  <[test-ui "ayy lmao"]
+  <[test-ui "xD"]
   <[multi switcher 1 $=
     <[:odd <[p "odd"]]
     <[:even <[p "even"]]]
@@ -396,6 +419,10 @@
          (when more
            (println more)
            (recur)))))]
+  <[div "1"]
+  <[div 1]
+  <[div nil]
+  <[div $= <[p "1"]]
   <[min-repro-2]
   <[min-repro-3]
   <[ssr-await-demo]

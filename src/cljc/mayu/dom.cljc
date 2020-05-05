@@ -146,7 +146,7 @@
                                (coll? %1) (to-single %1)
                                :else %1))
                 attrs-)
-        m (if (string? m-) (text m-) m-)]
+        m (if (fn? m-) m- (text m-))]
    {:keys [key]} <- w/get
    (w/pass (step tag (inner-create-element key tag attrs m)))))
 
@@ -267,7 +267,7 @@
 ;; TODO ideally this is the default version
 ;; TODO do performance tests to make sure its viable
 (defn bind_ [s f]
-  (bind-base s f w/pure))
+  (bind-base s f #(w/pure %)))
 
 (defn bind [s f]
   (bind-base s f s/shadow))

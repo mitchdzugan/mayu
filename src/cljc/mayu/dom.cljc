@@ -214,6 +214,7 @@
 
 (def bind-count (atom 0))
 (defnm bind-base [s f proc-input]
+  {:keys [e-request-render]} <- w/ask
   (step ::bind
         (mdo
          init-writer <- w/erased
@@ -242,6 +243,7 @@
                                                                  split-id}
                                                     :reader reader}))]
                               (post-render bind)
+                              (e/push! e-request-render true)
                               res))
                        s-shadowed)
                 (w/modify #(assoc %1 :split-id (get-in (s/inst! s-exec)
@@ -251,7 +253,6 @@
                 s-result <- (s/map :result s-exec)
                 s-mdom <- (s/map :mdom s-writer)
                 (w/tell {:mdom (->MBind s-mdom)})
-                (emit ::request-render (e/shadow (s/changed s-mdom)))
                 (w/eachm (keys (:events init-writer))
                          #(step %1 (mdo s-event <-
                                         (s/map (fn [events]
@@ -380,7 +381,9 @@
                                    :used? true}))])
 
 (defn run [e-render-info ssr? env m use-mdom]
-  (let [reader {:e-render-info e-render-info
+  (let [e-request-render (e/on! (e/Event))
+        reader {:e-render-info e-render-info
+                :e-request-render e-request-render
                 :ssr? ssr?
                 :step-fn step
                 :active-signal active-signal
@@ -394,21 +397,17 @@
                 :last-step ::root
                 :last-unique-step ::root}
         {:keys [writer result]}
-        (->> (collect ::request-render
-                      (fnm [e]
-                           result <- m
-                           [{:result result
-                             :request-render e}]))
+        (->> m
              (w/exec {:reader reader
                       :init-state {:split-id 0}
                       :init-writer {:mdom [] :events {}}}))
-        off (e/consume! (e/throttle (:request-render result) 10)
+        off (e/consume! (e/defer (e/throttle e-request-render 10) 0)
                         (fn [_] (use-mdom (:mdom writer))))]
     (use-mdom (:mdom writer))
     {:off (fn []
             (off-bind {:state reader})
             (off))
-     :result (:result result)}))
+     :result result}))
 
 (defn gen-uuid []
   (str (#?(:clj java.util.UUID/randomUUID :cljs random-uuid))))

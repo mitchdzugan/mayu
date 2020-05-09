@@ -27,6 +27,8 @@
 
 (def map e/map)
 
+(def until e/until)
+
 (def reduce e/reduce)
 
 (def filter e/filter)

@@ -412,6 +412,19 @@
               (dom/emit :c1 (dom/on-click b3))
               <[p $= <[span (str "c3 " c3)]]]]]]]])
 
+(defui stop-prop []
+  <[dom/collect-reduce-and-bind :a inc 0 $[a]=
+    <[div $=
+      <[dom/collect-reduce-and-bind :b inc 0 $[b]=
+        <[p (str "A: " a)]
+        <[p (str "B: " b)]
+        <[button "B"] d-b >
+        (->> (dom/on-click d-b)
+             (e/map #(.stopPropagation %))
+             (dom/emit :b))]
+      ] d-a >
+    (dom/emit :a (dom/on-click d-a))])
+
 (defui my-ui []
   [(let [c (dom/render-to-string {} ssr-await-demo)]
      (go-loop []
@@ -419,6 +432,7 @@
          (when more
            (println more)
            (recur)))))]
+  <[stop-prop]
   <[div "1"]
   <[div 1]
   <[div nil]

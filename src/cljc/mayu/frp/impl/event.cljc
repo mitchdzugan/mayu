@@ -157,6 +157,27 @@
                                 msg))))
           #(:deps @(:state e))))))
 
+(defn until [get-e e-until]
+  (on! (Event
+        #(let [a-off-1 (atom (fn []))
+               a-off-2 (atom (fn []))]
+           (reset! a-off-1 (subscribe! (get-e) %))
+           (reset! a-off-2
+                   (subscribe! e-until
+                               (fn [msg]
+                                 (when (push? msg)
+                                   (@a-off-1)
+                                   (@a-off-2)
+                                   (reset! a-off-1 (fn []))
+                                   (reset! a-off-2 (fn []))
+                                   (% (->Deps []))))))
+           (fn []
+             (@a-off-1)
+             (@a-off-2)
+             (reset! a-off-1 (fn []))
+             (reset! a-off-2 (fn []))))
+        #(:deps @(:state (get-e))))))
+
 (defn reduce [r i e]
   (if (never? e)
     never

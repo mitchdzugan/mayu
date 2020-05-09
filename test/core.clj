@@ -31,6 +31,21 @@
         (e/push! e 5)
         (e/push! e 6)
         (is (= @consumed [4 5])))))
+  (testing "until"
+    (let [consumed (atom [])
+          e1 (e/on! (e/Event))
+          e2 (e/on! (e/Event))
+          untild (e/until #(-> e1) e2)]
+      (e/push! e1 1)
+      (e/push! e1 2)
+      (let [off (e/consume! untild #(swap! consumed (curry conj %1)))]
+        (e/push! e1 3)
+        (e/push! e2 :O)
+        (e/push! e1 4)
+        (off)
+        (e/push! e1 5)
+        (e/push! e1 6)
+        (is (= @consumed [3])))))
   (testing "filter"
     (let [consumed (atom [])
           e (e/on! (e/Event))

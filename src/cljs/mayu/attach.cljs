@@ -12,39 +12,30 @@
             ["snabbdom/modules/eventlisteners" :as el]
             ["snabbdom/modules/style" :as style]))
 
-(def mutable-keys [:value :checked :selected])
+(def ^:dynamic g-render-info (atom {}))
+(def ^:dynamic g-mutable-els (atom {}))
 
 (defn update-mutable [prev curr]
-  (let [elm (aget curr "elm")
-        data (or (aget curr "data") #js {})
-        mutable (or (aget data "mutable") #js {})]
-    (doseq [kw-key mutable-keys]
+  (let [has? (atom false)
+        elm (aget curr "elm")
+        prev-data (or (aget prev "data") #js {})
+        curr-data (or (aget curr "data") #js {})
+        curr-mutable (or (aget curr-data "mutable") #js {})
+        prev-mutable (or (aget prev-data "mutable") #js {})
+        path (aget curr-data "path")]
+    (doseq [kw-key dom/mutable-keys]
       (let [key (name kw-key)
-            val (aget mutable key)
-            mkey (str "_mayu_mutable_" key)]
-        (when (and val (not= val (aget elm key)))
-          (aset elm key val))
-        (when (and val (not= val (aget elm mkey)))
-          (aset elm mkey val))))))
+            val (aget curr-mutable key)]
+        (when (.hasOwnProperty curr-mutable key)
+          (reset! has? true)
+          (when (not (.hasOwnProperty prev-mutable key))
+            (aset elm "__mayu_path" path)
+            (aset elm key val)))))
+    (when @has?
+      (swap! g-mutable-els #(assoc % path elm)))))
 
 (defrecord TText [s])
 (defrecord TCreateElement [tag key path attrs children])
-
-(def ^:dynamic g-render-info (atom {}))
-
-(def on-input
-  #(let [target (aget %1 "target")]
-     (js/setTimeout
-      (fn []
-        (doseq [kw-key mutable-keys]
-          (let [key (name kw-key)
-                mkey (str "_mayu_mutable_" key)
-                mval (aget target mkey)
-                val (get target key)]
-            (when (and mval
-                       (not= val mval))
-              (aset target key mval)))))
-      0)))
 
 (defn push-el [vnode]
   (let [el (aget vnode "elm")
@@ -62,6 +53,29 @@
 
 (declare thunk)
 
+(defn before-input [event]
+  (let [target (aget event "target")
+        value (aget target "value")
+        path (aget target "__mayu_path")]
+    (when path
+      (aset target "__mayu_last" value)
+      (aset target "__mayu_set?" false))))
+
+(defn after-input [elm event]
+  (let [target (aget event "target")
+        path (aget target "__mayu_path")
+        last (aget target "__mayu_last")
+        set? (aget target "__mayu_set?")]
+    (when (and (= elm target) path (not set?))
+      (aset target "value" last))))
+
+(defn add-after-input [prev curr]
+  (let [elm (aget curr "elm")]
+    (.addEventListener elm
+                       "input"
+                       (partial after-input elm)
+                       #js{:capture false})))
+
 (defprotomethod to-vdoms [tdom]
   TText
   (:s tdom)
@@ -72,10 +86,10 @@
                            (assoc %1 %2 (get attrs %2))
                            %1)
                         {}
-                        mutable-keys)
+                        dom/mutable-keys)
         fixed-attrs (reduce #(dissoc %1 %2)
                             (dissoc attrs :style)
-                            mutable-keys)
+                            dom/mutable-keys)
         fix-keys
         (fn [styles]
           (a/map-keys (fn [_ k]
@@ -93,7 +107,7 @@
         data (-> {:attrs fixed-attrs
                   :mutable mutable
                   :path path
-                  :on {:input on-input}
+                  :on {:beforeinput before-input}
                   :hook {:insert push-el-mount
                          :postpatch push-el}}
                  (#(if (nil? key) %1 (assoc %1 :key (str (hash key)))))
@@ -166,11 +180,15 @@
 
 (defn post-render [e-render-info render-info]
   (fn []
-    (swap! g-render-info #(assoc %1 :els (select-keys (:els %1) (keys (:used %1)))))
-    (e/push! e-render-info @render-info)))
+    (let [used (keys (:used @g-render-info))
+          remove-unused #(select-keys % used)]
+      (swap! g-render-info #(update % :els remove-unused))
+      (swap! g-mutable-els remove-unused)
+      (e/push! e-render-info @render-info))))
 
 (defn attach [element env ui]
-  (let [attrs? (.hasAttributes element)
+  (let [a-mutable-els (atom {})
+        attrs? (.hasAttributes element)
         raw-attrs (if attrs?
                     (aget element "attributes")
                     #js[])
@@ -185,12 +203,16 @@
         patch (init #js [(.-default attrs)
                          (.-default class)
                          (.-default el)
+                         #js {:create add-after-input}
                          #js {:create update-mutable
                               :update update-mutable
                               :post (post-render e-render-info render-info)}
                          (.-default style)])]
-    (dom/run e-render-info false env ui
-      #(binding [g-render-info render-info]
+    (dom/run {:a-mutable-els a-mutable-els
+              :e-render-info e-render-info
+              :to-js clj->js} env ui
+      #(binding [g-mutable-els a-mutable-els
+                 g-render-info render-info]
          (swap! g-render-info (curry merge {:mounted {} :used {}}))
          (let [vdom (h (aget element "tagName")
                        (clj->js {:attrs attrs-map})

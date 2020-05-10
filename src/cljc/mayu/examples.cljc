@@ -423,7 +423,7 @@
              (e/map #(.stopPropagation %))
              (dom/emit :b))]
       ] d-a >
-    (dom/emit :a (dom/on-click d-a))])
+    (dom/emit :a (dom/on-click {:capture false} d-a))])
 
 (defui my-ui []
   [(let [c (dom/render-to-string {} ssr-await-demo)]

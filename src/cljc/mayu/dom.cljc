@@ -84,9 +84,13 @@
    (defmacro mk-ons []
      `(do
         ~@(map (fn [name]
-                 `(defn ~(symbol name) [el#]
-                    ((:make-event-from-target el#)
-                     ~(-> name (subs 3) (clojure.string/replace #"-" "")))))
+                 `(defn ~(symbol name) [& args#]
+                    (let [[opts# el#] (if (= 1 (count args#))
+                                        [{} (first args#)]
+                                        args#)]
+                      ((:make-event-from-target el#)
+                       ~(-> name (subs 3) (clojure.string/replace #"-" ""))
+                       opts#))))
                targets))))
 
 (mk-ons)
@@ -98,12 +102,21 @@
         (e/map #(get-in %1 [:mounted parent-path]))
         (e/remove nil?))])
 
+(def mutable-keys [:value :checked :selected])
+
 (defnm inner-create-element [key tag attrs m]
+  a-mutable-els <- (w/asks :a-mutable-els)
+  to-js <- (w/asks :to-js)
   path <- curr-unique-path
+  let [el (get @a-mutable-els path)]
+  [(doseq [k mutable-keys]
+     (when (and el (contains? attrs k))
+       (aset el "__mayu_set?" true)
+       (aset el (name k) (k attrs))))]
   res <- (w/local #(merge %1 {:parent-path path}) m)
   {:keys [e-render-info]} <- w/ask
   let [make-event-from-target
-       (fn [target]
+       (fn [target opts]
          (->> e-render-info
               e/shadow
               (e/map #(get-in %1 [:els path]))
@@ -117,7 +130,12 @@
                      (let [res
                            (-> #(let [handler (fn [dom-event]
                                                 (%1 dom-event))]
-                                  (.addEventListener el target handler)
+                                  (.addEventListener el
+                                                     target
+                                                     handler
+                                                     (->> opts
+                                                          (merge {:capture true})
+                                                          to-js))
                                   (fn []
                                      (.removeEventListener el target handler)))
                                e/Event
@@ -380,9 +398,15 @@
                                    :off (fn [] (s/off! signal))
                                    :used? true}))])
 
-(defn run [e-render-info ssr? env m use-mdom]
-  (let [e-request-render (e/on! (e/Event))
-        reader {:e-render-info e-render-info
+(defn run [opts env m use-mdom]
+  (let [to-js (get opts :to-js identity)
+        a-mutable-els (get opts :a-mutable-els (atom nil))
+        e-render-info (get opts :e-render-info e/never)
+        ssr? (get env :ssr? false)
+        e-request-render (e/on! (e/Event))
+        reader {:to-js to-js
+                :a-mutable-els a-mutable-els
+                :e-render-info e-render-info
                 :e-request-render e-request-render
                 :ssr? ssr?
                 :step-fn step
@@ -486,7 +510,7 @@
         fc (chan)
 
         {run-off :off}
-        (run e/never true env m
+        (run {:ssr? true} env m
           #(do (loop [[[mdoms split-path] & splits] [[%1 []]]]
                  (when-not (nil? split-path)
                    (swap! state (curry assoc :splits []))

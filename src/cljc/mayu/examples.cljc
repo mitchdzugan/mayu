@@ -443,7 +443,8 @@
     <[button "b2"] b2 >
     (->> (dom/on-click b1)
          (dom/emit :a))
-    (dom/consume! (dom/on-click b2) println)])
+    (dom/consume! (->> (dom/on-click b2)
+                       (e/map #(do (println :f) %))) println)])
 
 (defui my-ui []
   [(let [c (dom/render-to-string {} ssr-await-demo)]

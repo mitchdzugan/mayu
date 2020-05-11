@@ -419,11 +419,22 @@
         <[p (str "A: " a)]
         <[p (str "B: " b)]
         <[button "B"] d-b >
-        (->> (dom/on-click d-b)
-             (e/map #(.stopPropagation %))
-             (dom/emit :b))]
+        (->> (dom/on-click d-b) dom/stop-propagation (dom/emit :b))]
       ] d-a >
     (dom/emit :a (dom/on-click {:capture false} d-a))])
+
+(defui disabled-example []
+  <[dom/collect-reduce-and-bind :a inc 0 $[a]=
+    <[dom/collect-reduce-and-bind :b inc 0 $[b]=
+      <[p a]
+      <[a "Click A"] btn-a >
+      <[p b]
+      <[a {:disabled (odd? a)} "Click B"] btn-b >
+      (->> (dom/on-click btn-b)
+           dom/remove-disabled
+           (dom/emit :b))
+      (->> (dom/on-click btn-a)
+           (dom/emit :a))]])
 
 (defui my-ui []
   [(let [c (dom/render-to-string {} ssr-await-demo)]
@@ -432,6 +443,7 @@
          (when more
            (println more)
            (recur)))))]
+  <[disabled-example]
   <[stop-prop]
   <[div "1"]
   <[div 1]

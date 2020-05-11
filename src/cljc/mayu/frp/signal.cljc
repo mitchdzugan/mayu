@@ -91,3 +91,6 @@
 
 (defnm shadow [s]
   (step ::shadow (raw-from #(inst! s) (e/shadow (changed s)))))
+
+(defn defer [s ms]
+  (step ::defer (raw-from #(inst! s) (e/defer (changed s) ms))))

@@ -129,6 +129,8 @@
                      (get existing target)
                      (let [res
                            (-> #(let [handler (fn [dom-event]
+                                                (-> dom-event
+                                                    (aset "__mayu_src" el))
                                                 (%1 dom-event))]
                                   (.addEventListener el
                                                      target
@@ -526,8 +528,7 @@
                      (recur (concat splits (:splits @state))))))
                (when (stream-rendered [] state send!)
                  (send! :off)
-                 (@off)
-                 )))]
+                 (@off))))]
     (if @done? (run-off) (reset! off run-off))
     (go-loop [off? false buffered {} next 0]
       (if (or (not off?) (not (empty? buffered)))
@@ -547,3 +548,17 @@
         (do (close! c)
             (close! fc))))
     fc))
+
+(defn prevent-default [e]
+  (e/map #(do (.preventDefault %1) %1) e))
+
+(defn stop-propagation [e]
+  (e/map #(do (.stopPropagation %1) %1) e))
+
+(defn event-source [elm]
+  (aget elm "__mayu_src"))
+
+(defn remove-disabled [e]
+  (e/remove #(and (.hasAttribute (event-source %1) "disabled")
+                  (not= (aget (event-source %1) "disabled") false))
+            e))

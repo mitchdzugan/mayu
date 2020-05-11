@@ -436,6 +436,15 @@
       (->> (dom/on-click btn-a)
            (dom/emit :a))]])
 
+(defui min-repro-4 []
+  <[dom/collect-reduce-and-bind :a inc 0 $[a]=
+    <[p a]
+    <[button "b1"] b1 >
+    <[button "b2"] b2 >
+    (->> (dom/on-click b1)
+         (dom/emit :a))
+    (dom/consume! (dom/on-click b2) println)])
+
 (defui my-ui []
   [(let [c (dom/render-to-string {} ssr-await-demo)]
      (go-loop []
@@ -443,6 +452,7 @@
          (when more
            (println more)
            (recur)))))]
+  <[min-repro-4]
   <[disabled-example]
   <[stop-prop]
   <[div "1"]

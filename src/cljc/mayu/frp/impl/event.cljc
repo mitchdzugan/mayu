@@ -131,7 +131,7 @@
         (swap! state (curry assoc :deps (get-deps))))
       (fn []
         (swap! state (curry update :subs #(dissoc %1 next-sub-id)))
-        (when (= 0 (sub-count))
+        (when (= 0 (:sub-count @state))
           (swap! global-push-counts #(dissoc %1 id))
           ((:off-callback @state)))))))
 

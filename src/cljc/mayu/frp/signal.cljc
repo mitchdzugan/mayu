@@ -44,6 +44,7 @@
         off! (let [unsub (e/consume! changed (fn [x]))]
                (fn []
                  (unsub)
+                 ;; TODO test to see if still needed
                  (e/off! changed)))]
    [(e/push! e-internal e-arg)
     {:off! off!

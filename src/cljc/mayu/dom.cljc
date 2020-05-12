@@ -140,7 +140,8 @@
                                         to-js
                                         (.addEventListener el target handler))
                                    (fn []
-                                     (.removeEventListener el target handler)))
+                                     (.removeEventListener el target handler
+                                                           (get opts :capture true))))
                                 e/Event
                                 e/on!
                                 (e/defer-off #(swap! buffered (a/curry conj %))))]
@@ -151,7 +152,8 @@
                         (when (and (on?) (not (empty? @buffered)))
                           (let [v (peek @buffered)]
                             (swap! buffered pop)
-                            (send-self! v)))))))))))]
+                            (send-self! v)
+                            (recur)))))))))))]
   [[{:res res :make-event-from-target make-event-from-target}
     (curry update :mdom #(-> [(->MCreateElement tag key path attrs %1)]))]])
 

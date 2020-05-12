@@ -274,6 +274,7 @@
 ;; this component draws a styled input component and label and
 ;; returns an event that fires everytime its input changes with
 ;; the value it is being changed to
+(def cc (atom 1))
 (defui styled-input [k label]
   ;; for every dom tag like `div` there is a corresponding
   ;; version ending in _ like `div_` that returns the result
@@ -290,14 +291,18 @@
       ;; as its input signal changes.
       <[apply s/unwrap-event
         <[dom/bind sig $[val]=
+          <[button "Btn"] el-btn >
+          (dom/consume! (dom/on-click el-btn) #(do (println (str "Clicked! " @cc))
+                                                   (swap! cc inc)))
           <[input {:value val}] el-input >
           [(->> (dom/on-input el-input)
-                (e/map #(.. % -target -value)))]]]]])
+                (e/map #(.. % -target -value))
+                (#(e/dedup % val)))]]]]])
 
 (defui inputs-demo []
   <[dom/collect-values ::upper "" $=
     e-changed <- <[styled-input ::upper "Force uppercase"]
-    (dom/emit ::upper (e/map #(do (slow-fib 37)
+    (dom/emit ::upper (e/map #(do (println (slow-fib 40))
                                   (clojure.string/upper-case %))
                              e-changed))]
   <[dom/collect-values ::max-5 "" $=

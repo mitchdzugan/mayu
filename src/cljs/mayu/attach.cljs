@@ -55,9 +55,10 @@
 
 (defn before-input [event]
   (let [target (aget event "target")
-        value (aget target "value")
-        path (aget target "__mayu_path")]
-    (when path
+        value (or (aget target "value") "")
+        path (aget target "__mayu_path")
+        set? (aget target "__mayu_set?")]
+    (when (and path (not= false set?))
       (aset target "__mayu_last" value)
       (aset target "__mayu_set?" false))))
 
@@ -67,7 +68,7 @@
         last (aget target "__mayu_last")
         set? (aget target "__mayu_set?")
         buffered (or (aget target "__mayu_buffered_input") (atom a/queue))]
-    (when (and (= elm target) path (not set?) (empty? @buffered))
+    (when (and last (= elm target) path (not set?) (empty? @buffered))
       (aset target "value" last))))
 
 (defn add-after-input [prev curr]

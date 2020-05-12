@@ -516,28 +516,32 @@
                      (fn [] (go (>! c :off))))
                 #(-> [])))))
 
-(defn dedup [e]
-  (let [set? (atom false)
-        last (atom nil)]
-    (if (never? e)
-      never
-      (on! (Event
-            #(let [off (subscribe! e
-                                   (fn [{:keys [val src count] :as msg}]
-                                     (cond (push? msg)
-                                           (let [was? @set?
-                                                 curr @last]
-                                             (reset! set? true)
-                                             (reset! last val)
-                                             (if (or (not was?)
-                                                     (not= curr val))
-                                               (% msg)
-                                               (% (->Src src count))))
-                                           :else (% msg))))]
-               (fn []
-                 (reset! set? false)
-                 (off)))
-            #(:deps @(:state e)))))))
+(defn dedup
+  ([e] (dedup e false nil))
+  ([e init] (dedup e true init))
+  ([e init-set? init]
+   (let [set? (atom init-set?)
+         last (atom init)]
+     (if (never? e)
+       never
+       (on! (Event
+             #(let [off (subscribe! e
+                                    (fn [{:keys [val src count] :as msg}]
+                                      (cond (push? msg)
+                                            (let [was? @set?
+                                                  curr @last]
+                                              (reset! set? true)
+                                              (reset! last val)
+                                              (if (or (not was?)
+                                                      (not= curr val))
+                                                (% msg)
+                                                (% (->Src src count))))
+                                            :else (% msg))))]
+                (fn []
+                  (when-not init-set?
+                    (reset! set? false))
+                  (off)))
+             #(:deps @(:state e))))))))
 
 (defn before-on [e f]
   (let [a-e (atom nil)]

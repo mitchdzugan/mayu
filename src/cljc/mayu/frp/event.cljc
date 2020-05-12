@@ -55,6 +55,8 @@
 
 (def dedup e/dedup)
 
+(def before-on e/before-on)
+
 (defn tag-with [f e s]
   (->> e
        (map #(-> [true %1]))

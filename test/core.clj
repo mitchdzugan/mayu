@@ -187,7 +187,7 @@
           e (e/on! (e/Event (fn [_]
                               (swap! ons inc)
                               (fn [] (swap! offs inc)))))
-          ed (e/defer-off e 50)
+          ed (e/defer-off e (fn []) 50)
           _ (e/push! e 1)
           off1 (e/consume! ed #(swap! consumed1 (curry conj %1)))
           _ (e/push! e 2)

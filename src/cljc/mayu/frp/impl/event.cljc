@@ -436,8 +436,8 @@
      res)))
 
 (defn defer-off
-  ([e] (defer-off e 0))
-  ([e ms]
+  ([e f] (defer-off e f 0))
+  ([e f ms]
    (if (never? e)
      never
      (let [soft-on? (atom false)
@@ -446,7 +446,12 @@
        (on! (Event (fn [send-self!]
                      (reset! soft-on? true)
                      (when (not @on?)
-                       (reset! off-fn (subscribe! e send-self!))
+                       (reset! off-fn
+                               (subscribe! e
+                                           (fn [msg]
+                                             (cond
+                                               @soft-on? (send-self! msg)
+                                               (push? msg) (f (:val msg))))))
                        (reset! on? true))
                      (fn []
                        (reset! soft-on? false)
@@ -533,6 +538,18 @@
                  (reset! set? false)
                  (off)))
             #(:deps @(:state e)))))))
+
+(defn before-on [e f]
+  (let [a-e (atom nil)]
+    (reset! a-e
+            (Event (fn [send-self!]
+                     (go (<! (timeout 0))
+                         (f #(send-self! (->Push % ::none 0))
+                            #(not (empty? (:subs @(:state @a-e))))))
+                     (fn []))
+                   #(-> [])))
+    (on! @a-e)
+    (join @a-e e)))
 
 (extend-protocol Monoid
   RawEvent

@@ -265,6 +265,12 @@
     <[then <[p "umm"]]
     <[else <[p "Nice!"]]])
 
+(defn slow-fib [n]
+  (if (< n 2)
+    1
+    (+ (slow-fib (dec n))
+       (slow-fib (dec (dec n))))))
+
 ;; this component draws a styled input component and label and
 ;; returns an event that fires everytime its input changes with
 ;; the value it is being changed to
@@ -285,12 +291,15 @@
       <[apply s/unwrap-event
         <[dom/bind sig $[val]=
           <[input {:value val}] el-input >
-          [(e/map #(.. %1 -target -value) (dom/on-input el-input))]]]]])
+          [(->> (dom/on-input el-input)
+                (e/map #(.. % -target -value)))]]]]])
 
 (defui inputs-demo []
   <[dom/collect-values ::upper "" $=
     e-changed <- <[styled-input ::upper "Force uppercase"]
-    (dom/emit ::upper (e/map clojure.string/upper-case e-changed))]
+    (dom/emit ::upper (e/map #(do (slow-fib 37)
+                                  (clojure.string/upper-case %))
+                             e-changed))]
   <[dom/collect-values ::max-5 "" $=
     e-changed <- <[styled-input ::max-5 "Max 5 chars"]
     (dom/emit ::max-5 (e/filter #(<= (count %1) 5) e-changed))])
@@ -362,8 +371,7 @@
     s-c2 <- (s/map dec s-counter)
     <[dom/bind s-counter $[counter]= <[p (str counter)]]
     <[dom/bind s-c1 $[c1]= <[p (str c1)]]
-    <[dom/bind s-c2 $[c2]= <[p (str c2)]]]
-  )
+    <[dom/bind s-c2 $[c2]= <[p (str c2)]]])
 
 (defui min-repro-2 []
   <[dom/collect-and-reduce ::counter inc 0 $=

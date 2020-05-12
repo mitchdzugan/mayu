@@ -16,8 +16,6 @@
              :refer [defnm defm mdo fnm <#>]])
   #?(:cljs (:require-macros [mayu.dom :refer [mk-ons]])))
 
-;; TODO investigate rapid binds probably has to do with mutually defined sigs
-
 (defm env (w/asks :env))
 
 (defnm envs [f]
@@ -124,27 +122,36 @@
               e/dedup
               (e/flat-map
                (fn [el]
-                 (let [existing (aget el "__mayu_events")]
-                   (if (get existing target)
-                     (get existing target)
-                     (let [res
-                           (-> #(let [handler (fn [dom-event]
-                                                (-> dom-event
-                                                    (aset "__mayu_src" el))
-                                                (%1 dom-event))]
-                                  (.addEventListener el
-                                                     target
-                                                     handler
-                                                     (->> opts
-                                                          (merge {:capture true})
-                                                          to-js))
-                                  (fn []
-                                    (.removeEventListener el target handler)))
-                               e/Event
-                               e/on!
-                               e/defer-off)]
-                       (aset el "__mayu_events" (assoc existing target res))
-                       res)))))))]
+                 (let [buffered-key (str "__mayu_buffered_" target)
+                       buffered (or (aget el buffered-key)
+                                    (atom a/queue))
+                       existing (aget el "__mayu_events")]
+                   (aset el buffered-key buffered)
+                   (e/before-on
+                    (if (get existing target)
+                      (get existing target)
+                      (let [res
+                            (-> #(let [handler
+                                       (fn [dom-event]
+                                         (aset dom-event "__mayu_src" el)
+                                         (%1 dom-event))]
+                                   (->> opts
+                                        (merge {:capture true})
+                                        to-js
+                                        (.addEventListener el target handler))
+                                   (fn []
+                                     (.removeEventListener el target handler)))
+                                e/Event
+                                e/on!
+                                (e/defer-off #(swap! buffered (a/curry conj %))))]
+                        (aset el "__mayu_events" (assoc existing target res))
+                        res))
+                    (fn [send-self! on?]
+                      (loop []
+                        (when (and (on?) (not (empty? @buffered)))
+                          (let [v (peek @buffered)]
+                            (swap! buffered pop)
+                            (send-self! v)))))))))))]
   [[{:res res :make-event-from-target make-event-from-target}
     (curry update :mdom #(-> [(->MCreateElement tag key path attrs %1)]))]])
 

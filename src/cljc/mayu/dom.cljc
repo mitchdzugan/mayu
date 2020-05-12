@@ -139,7 +139,7 @@
                                                           (merge {:capture true})
                                                           to-js))
                                   (fn []
-                                     (.removeEventListener el target handler)))
+                                    (.removeEventListener el target handler)))
                                e/Event
                                e/on!
                                e/defer-off)]
@@ -201,13 +201,10 @@
                           agg)))]
       (reduce-kv reducer {} m))))
 
-(defn off-bind [{{:keys [memos signals binds offs]} :state :as bind}]
+(defn off-bind [{{:keys [memos signals binds]} :state :as bind}]
   (doseq [[_ memo] @memos]
     (off-bind memo))
   (reset! memos {})
-  (doseq [off @offs]
-    (off))
-  (reset! offs [])
   (doseq [[_ {:keys [off]}] @signals]
     (off))
   (reset! signals {})
@@ -218,11 +215,7 @@
 (defn pre-render [state]
   (swap! (:memos state) reset-used)
   (swap! (:signals state) reset-used)
-  (swap! (:binds state) reset-used)
-  (swap! (:offs state) (fn [offs]
-                        (doseq [off offs]
-                          (off))
-                         [])))
+  (swap! (:binds state) reset-used))
 
 (defn post-render [state]
   (swap! (:signals state)
@@ -243,8 +236,7 @@
          let [bind (or (get-in @binds [path :state])
                        {:memos (atom {})
                         :signals (atom {})
-                        :binds (atom {})
-                        :offs (atom [])})]
+                        :binds (atom {})})]
          [(swap! binds #(-> %1
                             (assoc-in [path :used?] true)
                             (assoc-in [path :state] bind)))]
@@ -295,9 +287,10 @@
 
 (defnm consume! [t f]
   let [event? (nil? (:inst! t))
-       consumer (if event? e/consume! s/consume!)]
-  offs <- (w/asks :offs)
-  [(swap! offs (curry conj (consumer t f)))])
+       e (if event? t (s/changed t))]
+  (w/whenm (not event?)
+           [(f (s/inst! t))])
+  (emit ::consume! (e/map #(-> [f %]) e)))
 
 (defnm memo [via m]
   (step ::memo
@@ -308,8 +301,7 @@
                   state (or (:state memo)
                             {:memos (atom {})
                              :signals (atom {})
-                             :binds (atom {})
-                             :offs (atom [])})]
+                             :binds (atom {})})]
              skip? --> (mdo (w/eachm (-> memo :writer :mdom)
                                      #(w/tell {:mdom %1}))
                             (w/eachm (keys (-> memo :writer :events))
@@ -404,7 +396,7 @@
   (let [to-js (get opts :to-js identity)
         a-mutable-els (get opts :a-mutable-els (atom nil))
         e-render-info (get opts :e-render-info e/never)
-        ssr? (get env :ssr? false)
+        ssr? (get opts :ssr? false)
         e-request-render (e/on! (e/Event))
         reader {:to-js to-js
                 :a-mutable-els a-mutable-els
@@ -417,13 +409,15 @@
                 :signals (atom {})
                 :binds (atom {})
                 :memos (atom {})
-                :offs (atom [])
                 :split-path []
                 :env env
                 :last-step ::root
                 :last-unique-step ::root}
         {:keys [writer result]}
-        (->> m
+        (->> (collect ::consume! (fnm [e]
+                                      let [off (e/consume! e (fn [[f v]] (f v)))]
+                                      res <- m
+                                      [{:off off :res res}]))
              (w/exec {:reader reader
                       :init-state {:split-id 0}
                       :init-writer {:mdom [] :events {}}}))
@@ -431,9 +425,10 @@
                         (fn [_] (use-mdom (:mdom writer))))]
     (use-mdom (:mdom writer))
     {:off (fn []
+            ((:off result))
             (off-bind {:state reader})
             (off))
-     :result result}))
+     :result (:res result)}))
 
 (defn gen-uuid []
   (str (#?(:clj java.util.UUID/randomUUID :cljs random-uuid))))

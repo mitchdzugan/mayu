@@ -23,6 +23,11 @@
         curr-mutable (or (aget curr-data "mutable") #js {})
         prev-mutable (or (aget prev-data "mutable") #js {})
         path (aget curr-data "path")]
+    (when (and (.hasOwnProperty curr-data "delayed-class")
+               (not (.hasOwnProperty prev-data "delayed-class")))
+      (js/setTimeout #(->> (aget curr-data "delayed-class")
+                           (aset elm "className"))
+                     100))
     (doseq [kw-key dom/mutable-keys]
       (let [key (name kw-key)
             val (aget curr-mutable key)]
@@ -33,6 +38,18 @@
             (aset elm key val)))))
     (when @has?
       (swap! g-mutable-els #(assoc % path elm)))))
+
+(defn handle-delayed-class [prev curr]
+  (let [has? (atom false)
+        elm (aget curr "elm")
+        prev-data (or (aget prev "data") #js {})
+        curr-data (or (aget curr "data") #js {})]
+    (when (and (.hasOwnProperty curr-data "delayed-class")
+               (.hasOwnProperty prev-data "delayed-class"))
+      (let [args (aget curr-data "args")
+            delayed-class (aget curr-data "delayed-class")]
+        (->> (assoc-in args [1 :attrs :class] delayed-class)
+             (aset curr-data "args"))))))
 
 (defrecord TText [s])
 (defrecord TCreateElement [tag key path attrs children])
@@ -84,13 +101,14 @@
 
   TCreateElement
   (let [{:keys [tag key path attrs children]} tdom
+        {:keys [delayed-class]} attrs
         mutable (reduce #(if (contains? attrs %2)
                            (assoc %1 %2 (get attrs %2))
                            %1)
                         {}
                         dom/mutable-keys)
         fixed-attrs (reduce #(dissoc %1 %2)
-                            (dissoc attrs :style)
+                            (dissoc attrs :style :delayed-class)
                             dom/mutable-keys)
         fix-keys
         (fn [styles]
@@ -113,6 +131,9 @@
                   :hook {:insert push-el-mount
                          :postpatch push-el}}
                  (#(if (nil? key) %1 (assoc %1 :key (str (hash key)))))
+                 (#(if (nil? delayed-class) %1 (assoc %1
+                                                      :delayed-class
+                                                      delayed-class)))
                  ((fn [data]
                     (if (empty? (:style attrs))
                       data
@@ -147,6 +168,7 @@
     (copy-to-thunk vnode thunk)))
 
 (defn thunk-prepatch [prev curr]
+  (handle-delayed-class prev curr)
   (let [prev-data (or (aget prev "data") #js {})
         curr-data (or (aget curr "data") #js {})
         prev-args (or (aget prev-data "args") [])
@@ -163,6 +185,8 @@
                     :args [tag data children path]}]
     (when (not (nil? (:key data)))
       (aset jsdata "key" (:key data)))
+    (when (not (nil? (:delayed-class data)))
+      (aset jsdata "delayed-class" (:delayed-class data)))
     (h tag jsdata)))
 
 (defprotomethod to-tdoms [mdom]

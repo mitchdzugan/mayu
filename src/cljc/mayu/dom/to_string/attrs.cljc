@@ -56,3 +56,12 @@
   "Render a map of attributes."
   [attrs]
   (apply str (sort (map render-attribute attrs))))
+
+(defn render-class [c]
+  (let [to-single #(reduce str "" (interpose " " %))]
+    (cond (map? c) (->> (keys c)
+                        (filter (partial get c))
+                        (map name)
+                        to-single)
+          (coll? c) (to-single c)
+          :else c)))

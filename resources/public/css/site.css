@@ -52,3 +52,11 @@ a:hover {
 label input {
 		margin-left: 10px;
 }
+
+.transition {
+		transition: transform 0.4s;
+}
+
+.no-transition .transition {
+		transition: none;
+}

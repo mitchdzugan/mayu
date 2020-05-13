@@ -9,12 +9,14 @@
             [mayu.async
              :refer [go go-loop timeout <! chan >! close!]]
             [mayu.dom.to-string.attrs
-             :refer [render-attr-map]]
+             :refer [render-attr-map render-class]]
             [mayu.mdom
              :refer [->MText ->MCreateElement ->MBind ->MSSRAwait]]
             [wayra.core :as w
              :refer [defnm defm mdo fnm <#>]])
   #?(:cljs (:require-macros [mayu.dom :refer [mk-ons]])))
+
+;; TODO investigate collect-reduce-and-bind (crab) within crab within crab
 
 (defm env (w/asks :env))
 
@@ -165,16 +167,13 @@
                      [{} arg])]
      (create-element tag attrs m)))
   ([tag attrs- m-]
-   let [to-single #(reduce str "" (interpose " " %))]
-   let [attrs (if (contains? attrs- :class)
-                (update attrs- :class
-                        #(cond (map? %1) (->> (keys %1)
-                                              (filter (partial get %1))
-                                              (map name)
-                                              to-single)
-                               (coll? %1) (to-single %1)
-                               :else %1))
-                attrs-)
+   let [attrs (-> attrs-
+                  (#(if (contains? %1 :class)
+                      (update %1 :class render-class)
+                      %1))
+                  (#(if (contains? %1 :delayed-class)
+                      (update %1 :delayed-class render-class)
+                      %1)))
         m (if (fn? m-) m- (text m-))]
    {:keys [key]} <- w/get
    (w/pass (step tag (inner-create-element key tag attrs m)))))
@@ -458,9 +457,14 @@
 
   !MCreateElement
   (let [{:keys [tag attrs children]} mdom
-        fixed-attrs (update attrs :style #(-> %1
-                                              (dissoc :delayed :remove)
-                                              (merge (:delayed %1))))]
+        fixed-attrs (-> attrs
+                        (update :style #(-> %1
+                                            (dissoc :delayed :remove)
+                                            (merge (:delayed %1))))
+                        (#(if (contains? %1 :delayed-class)
+                            (assoc %1 :class (:delayed-class %1))
+                            %1))
+                        (dissoc :delayed-class))]
     (str "<" tag (render-attr-map fixed-attrs) ">"
          (reduce #(str %1 (proc-mdom %2 split-path state)) "" children)
          "</" tag ">"))

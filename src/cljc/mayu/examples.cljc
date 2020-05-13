@@ -337,25 +337,33 @@
       (dom/emit ::counter (dom/on-click btn1))
       <[button {:style {:margin-left "55px"}} "+"] btn >
       (dom/emit ::items (e/map (varg# (->Append)) (dom/on-click btn)))
-      <[for items $[{:keys [id]}]=
-        <[keyed id
-          <[div {:style {:display "flex"
-                         :align-items "stretch"
-                         :margin "5px"
-                         :transition "transform 0.4s"
-                         :transform "scale(0, 0)"
-                         :delayed {:transform "scale(1, 1)"}
-                         :remove {:transform "scale(0, 0)"}}} $=
-            <[div {:style {:background-color "#74f7df"
-                           :width "50px"}}]
-            <[button "x"] btn >
-            (dom/emit ::items (e/map (varg# (->Remove id)) (dom/on-click btn)))]]]]])
+      <[keyed counter
+        <[div {:class "no-transition"
+               :delayed-class ["test" "123"]}
+          $=
+          <[for items $[{:keys [id]}]=
+            <[keyed id
+              <[div {:class "transition"
+                     :style {:display "flex"
+                             :align-items "stretch"
+                             :margin "5px"
+                             :transform "scale(0, 0)"
+                             :delayed {:transform "scale(1, 1)"}
+                             :remove {:transform "scale(0, 0)"}}} $=
+                <[div {:style {:background-color "#74f7df"
+                               :width "50px"}}]
+                <[button "x"] btn >
+                (dom/emit ::items (e/map (varg# (->Remove id)) (dom/on-click btn)))]]]]]]])
 
 (defui ssr-await-demo []
   s-timer <- (s/reduce inc 0 (e/timer 1000))
   <[dom/bind s-timer $[timer]=
-    <[ul $=
-      <[li {:class {:a true :b false :c true}} "Begin"]
+    <[ul {:class ["a" "b"]
+          :delayed-class ["c" "d"]} $=
+      <[li {:style {:display "none"
+                    :delayed {:display "block"}
+                    :remove {:display "none"}}
+            :class {:a true :b false :c true}} "Begin"]
       <[ssr-await (>= timer 2) 4000
         <[timeout <[li "Failed to load in time"]]
         <[then    <[li "Slow loading 1"]]]

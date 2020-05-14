@@ -23,11 +23,6 @@
         curr-mutable (or (aget curr-data "mutable") #js {})
         prev-mutable (or (aget prev-data "mutable") #js {})
         path (aget curr-data "path")]
-    (when (and (.hasOwnProperty curr-data "delayed-class")
-               (not (.hasOwnProperty prev-data "delayed-class")))
-      (js/setTimeout #(->> (aget curr-data "delayed-class")
-                           (aset elm "className"))
-                     100))
     (doseq [kw-key dom/mutable-keys]
       (let [key (name kw-key)
             val (aget curr-mutable key)]
@@ -168,14 +163,18 @@
     (copy-to-thunk vnode thunk)))
 
 (defn thunk-prepatch [prev curr]
-  (handle-delayed-class prev curr)
   (let [prev-data (or (aget prev "data") #js {})
         curr-data (or (aget curr "data") #js {})
         prev-args (or (aget prev-data "args") [])
         curr-args (or (aget curr-data "args") [])
         [_ _ _ path] curr-args]
     (swap! g-render-info #(assoc-in %1 [:els path] (aget prev "elm")))
-    (copy-to-thunk (if (= prev-args curr-args) prev (build-thunk curr)) curr)))
+    (copy-to-thunk (if (= prev-args curr-args)
+                     prev
+                     (do
+                       (handle-delayed-class prev curr)
+                       (build-thunk curr)))
+                   curr)))
 
 (defn thunk [path tag data children]
   (let [jsdata #js {:hook #js {:init thunk-init

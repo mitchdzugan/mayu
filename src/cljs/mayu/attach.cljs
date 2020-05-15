@@ -34,17 +34,14 @@
     (when @has?
       (swap! g-mutable-els #(assoc % path elm)))))
 
-(defn handle-delayed-class [prev curr]
+(defn handle-delayed [prev curr]
   (let [has? (atom false)
         elm (aget curr "elm")
-        prev-data (or (aget prev "data") #js {})
-        curr-data (or (aget curr "data") #js {})]
-    (when (and (.hasOwnProperty curr-data "delayed-class")
-               (.hasOwnProperty prev-data "delayed-class"))
-      (let [args (aget curr-data "args")
-            delayed-class (aget curr-data "delayed-class")]
-        (->> (assoc-in args [1 :attrs :class] delayed-class)
-             (aset curr-data "args"))))))
+        data (or (aget curr "data") #js {})
+        args (or (aget data "args") [])
+        [_ clj-data _ path] args]
+    (->> (update-in args [1 :attrs] #(merge %1 (:delayed clj-data)))
+         (aset data "args"))))
 
 (defrecord TText [s])
 (defrecord TCreateElement [tag key path attrs children])
@@ -96,14 +93,14 @@
 
   TCreateElement
   (let [{:keys [tag key path attrs children]} tdom
-        {:keys [delayed-class]} attrs
+        {:keys [delayed]} attrs
         mutable (reduce #(if (contains? attrs %2)
                            (assoc %1 %2 (get attrs %2))
                            %1)
                         {}
                         dom/mutable-keys)
         fixed-attrs (reduce #(dissoc %1 %2)
-                            (dissoc attrs :style :delayed-class)
+                            (dissoc attrs :style :delayed)
                             dom/mutable-keys)
         fix-keys
         (fn [styles]
@@ -121,14 +118,12 @@
 
         data (-> {:attrs fixed-attrs
                   :mutable mutable
+                  :delayed delayed
                   :path path
                   :on {:beforeinput before-input}
                   :hook {:insert push-el-mount
                          :postpatch push-el}}
                  (#(if (nil? key) %1 (assoc %1 :key (str (hash key)))))
-                 (#(if (nil? delayed-class) %1 (assoc %1
-                                                      :delayed-class
-                                                      delayed-class)))
                  ((fn [data]
                     (if (empty? (:style attrs))
                       data
@@ -172,7 +167,7 @@
     (copy-to-thunk (if (= prev-args curr-args)
                      prev
                      (do
-                       (handle-delayed-class prev curr)
+                       (handle-delayed prev curr)
                        (build-thunk curr)))
                    curr)))
 
@@ -184,8 +179,6 @@
                     :args [tag data children path]}]
     (when (not (nil? (:key data)))
       (aset jsdata "key" (:key data)))
-    (when (not (nil? (:delayed-class data)))
-      (aset jsdata "delayed-class" (:delayed-class data)))
     (h tag jsdata)))
 
 (defprotomethod to-tdoms [mdom]

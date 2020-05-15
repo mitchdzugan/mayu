@@ -167,13 +167,12 @@
                      [{} arg])]
      (create-element tag attrs m)))
   ([tag attrs- m-]
-   let [attrs (-> attrs-
-                  (#(if (contains? %1 :class)
-                      (update %1 :class render-class)
-                      %1))
-                  (#(if (contains? %1 :delayed-class)
-                      (update %1 :delayed-class render-class)
-                      %1)))
+   let [update-class #(if (contains? %1 :class)
+                        (update %1 :class render-class)
+                        %1)
+        attrs (-> attrs-
+                  update-class
+                  (update :delayed update-class))
         m (if (fn? m-) m- (text m-))]
    {:keys [key]} <- w/get
    (w/pass (step tag (inner-create-element key tag attrs m)))))
@@ -458,13 +457,11 @@
   !MCreateElement
   (let [{:keys [tag attrs children]} mdom
         fixed-attrs (-> attrs
+                        (merge (:delayed attrs))
+                        (dissoc :delayed)
                         (update :style #(-> %1
                                             (dissoc :delayed :remove)
-                                            (merge (:delayed %1))))
-                        (#(if (contains? %1 :delayed-class)
-                            (assoc %1 :class (:delayed-class %1))
-                            %1))
-                        (dissoc :delayed-class))]
+                                            (merge (:delayed %1)))))]
     (str "<" tag (render-attr-map fixed-attrs) ">"
          (reduce #(str %1 (proc-mdom %2 split-path state)) "" children)
          "</" tag ">"))

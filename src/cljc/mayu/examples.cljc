@@ -339,7 +339,7 @@
       (dom/emit ::items (e/map (varg# (->Append)) (dom/on-click btn)))
       <[keyed counter
         <[div {:class "no-transition"
-               :delayed-class ["test" "123"]}
+               :delayed {:class ["test" "123"]}}
           $=
           <[for items $[{:keys [id]}]=
             <[keyed id
@@ -359,7 +359,7 @@
   s-timer <- (s/reduce inc 0 (e/timer 1000))
   <[dom/bind s-timer $[timer]=
     <[ul {:class ["a" "b"]
-          :delayed-class ["c" "d"]} $=
+          :delayed {:class ["c" "d"]}} $=
       <[li {:style {:display "none"
                     :delayed {:display "block"}
                     :remove {:display "none"}}

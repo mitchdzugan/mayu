@@ -14,6 +14,7 @@
 
 (def ^:dynamic g-render-info (atom {}))
 (def ^:dynamic g-mutable-els (atom {}))
+(def ^:dynamic g-post-render (atom []))
 
 (defn update-mutable [prev curr]
   (let [has? (atom false)
@@ -22,7 +23,10 @@
         curr-data (or (aget curr "data") #js {})
         curr-mutable (or (aget curr-data "mutable") #js {})
         prev-mutable (or (aget prev-data "mutable") #js {})
-        path (aget curr-data "path")]
+        path (aget curr-data "path")
+        has-render? (not (nil? (aget curr-data "on-render")))
+        on-render (or (aget curr-data "on-render") (fn []))]
+    (swap! g-post-render (curry conj #(on-render elm)))
     (doseq [kw-key dom/mutable-keys]
       (let [key (name kw-key)
             val (aget curr-mutable key)]
@@ -93,14 +97,14 @@
 
   TCreateElement
   (let [{:keys [tag key path attrs children]} tdom
-        {:keys [delayed]} attrs
+        {:keys [delayed on-render]} attrs
         mutable (reduce #(if (contains? attrs %2)
                            (assoc %1 %2 (get attrs %2))
                            %1)
                         {}
                         dom/mutable-keys)
         fixed-attrs (reduce #(dissoc %1 %2)
-                            (dissoc attrs :style :delayed)
+                            (dissoc attrs :style :delayed :on-render)
                             dom/mutable-keys)
         fix-keys
         (fn [styles]
@@ -119,6 +123,7 @@
         data (-> {:attrs fixed-attrs
                   :mutable mutable
                   :delayed delayed
+                  :on-render on-render
                   :path path
                   :on {:beforeinput before-input}
                   :hook {:insert push-el-mount
@@ -202,10 +207,12 @@
           remove-unused #(select-keys % used)]
       (swap! g-render-info #(update % :els remove-unused))
       (swap! g-mutable-els remove-unused)
-      (e/push! e-render-info @render-info))))
+      (e/push! e-render-info @render-info)
+      (swap! g-post-render (fn [fs] (doseq [f fs] (f)) [])))))
 
 (defn attach [element env ui]
-  (let [a-mutable-els (atom {})
+  (let [a-post-render (atom [])
+        a-mutable-els (atom {})
         attrs? (.hasAttributes element)
         raw-attrs (if attrs?
                     (aget element "attributes")
@@ -229,7 +236,8 @@
     (dom/run {:a-mutable-els a-mutable-els
               :e-render-info e-render-info
               :to-js clj->js} env ui
-      #(binding [g-mutable-els a-mutable-els
+      #(binding [g-post-render a-post-render
+                 g-mutable-els a-mutable-els
                  g-render-info render-info]
          (swap! g-render-info (curry merge {:mounted {} :used {}}))
          (let [vdom (h (aget element "tagName")

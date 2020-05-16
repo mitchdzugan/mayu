@@ -470,6 +470,39 @@
                        (e/map #(do (println :f) %)))
                   println)])
 
+(defn on-render [el]
+  (aset el "scrollTop" 50))
+
+(defui on-render-test []
+  <[dom/collect-reduce-and-bind :a inc 0 $[a]=
+    <[when (> a 3)
+      <[div {:on-render on-render
+             :style {:width "200px"
+                     :height "200px"
+                     :border "1px solid black"
+                     :overflow "scroll"}} $=
+        <[ul $=
+          <[li "1"]
+          <[li "1"]
+          <[li "1"]
+          <[li "1"]
+          <[li "1"]
+          <[li "1"]
+          <[li "1"]
+          <[li "1"]
+          <[li "1"]
+          <[li "1"]
+          <[li "1"]
+          <[li "1"]
+          <[li "1"]
+          <[li "1"]
+          <[li "1"]
+          <[li "1"]]]]
+    <[p a]
+    <[button "Inc"] btn >
+    (->> (dom/on-click btn)
+         (dom/emit :a))])
+
 (defui my-ui []
   [(let [c (dom/render-to-string {} ssr-await-demo)]
      (go-loop []
@@ -477,6 +510,7 @@
          (when more
            (println more)
            (recur)))))]
+  <[on-render-test]
   <[min-repro-4]
   <[disabled-example]
   <[stop-prop]

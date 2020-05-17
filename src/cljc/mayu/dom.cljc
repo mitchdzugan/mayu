@@ -458,7 +458,7 @@
   (let [{:keys [tag attrs children]} mdom
         fixed-attrs (-> attrs
                         (merge (:delayed attrs))
-                        (dissoc :delayed)
+                        (dissoc :delayed :on-render)
                         (update :style #(-> %1
                                             (dissoc :delayed :remove)
                                             (merge (:delayed %1)))))]

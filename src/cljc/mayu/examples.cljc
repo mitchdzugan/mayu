@@ -7,6 +7,8 @@
              :refer [defui ui]]
             [mayu.frp.event :as e]
             [mayu.frp.signal :as s]
+            [mayu.c-one :as c-one]
+            [mayu.c-two :as c-two]
             [mayu.dom :as dom]
             [mayu.dom.to-string.attrs :as attrs]))
 
@@ -503,6 +505,14 @@
     (->> (dom/on-click btn)
          (dom/emit :a))])
 
+(defui min-repro-5 []
+  <[dom/collect-reduce-and-bind :c inc 0 $[c]=
+    let [is-odd? (odd? c)]
+    ((if is-odd? c-one/c c-two/c))
+    <[button "Click"] btn >
+    <[p is-odd?]
+    (dom/emit :c (dom/on-click btn))])
+
 (defui my-ui []
   [(let [c (dom/render-to-string {} ssr-await-demo)]
      (go-loop []
@@ -510,6 +520,7 @@
          (when more
            (println more)
            (recur)))))]
+  <[min-repro-5]
   <[on-render-test]
   <[min-repro-4]
   <[disabled-example]

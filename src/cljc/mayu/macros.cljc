@@ -166,4 +166,4 @@
 
 #?(:clj
    (defmacro defui [label args & body]
-     `(defn ~label ~args (dom/step ~(str label) (ui ~@body)))))
+     `(defn ~label ~args (dom/step ~(str *ns* "." label) (ui ~@body)))))

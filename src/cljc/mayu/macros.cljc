@@ -106,6 +106,13 @@
                                                       (assoc agg id
                                                              `(ui ~@body)))
                                                     {}))]))
+                 'multi-f (let [[pre _ multis] (partition-by #(= %1 '$=) args)]
+                            (concat pre [(->> multis
+                                              (filter vector?)
+                                              (reduce (fn [agg [id dol args eq & body]]
+                                                        (assoc agg id
+                                                               `(fn ~args (ui ~@body))))
+                                                      {}))]))
                  'keyed `(dom/keyed ~(nth args 0) (ui ~@(drop 1 args)))
                  (let [f (cond
                            (get tags/tag-map (name f))

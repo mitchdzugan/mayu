@@ -192,6 +192,11 @@
     <[true (:odd child-map)]
     <[false (:even child-map)]])
 
+(defui switcher-f [n child-map]
+  <[case (odd? n)
+    <[true ((:odd child-map) "lmao")]
+    <[false ((:even child-map) "lmao")]])
+
 (defui special-syms []
   ; [(println (macroexpand-1) '(ui))]
   let [!ui
@@ -225,6 +230,15 @@
   <[multi switcher 3 $=
     <[:odd <[p "odd"]]
     <[:even <[p "even"]]]
+  <[multi-f switcher-f 1 $=
+    <[:odd $[s]= <[p (str "odd " s)]]
+    <[:even $[s]= <[p (str "even " s)]]]
+  <[multi-f switcher-f 2 $=
+    <[:odd $[s]= <[p (str "odd " s)]]
+    <[:even $[s]= <[p (str "even " s)]]]
+  <[multi-f switcher-f 3 $=
+    <[:odd $[s]= <[p (str "odd " s)]]
+    <[:even $[s]= <[p (str "even " s)]]]
   <[ul $=
     <[for ["this" "is" "a" "list"] $[s]=
       <[li s]]]

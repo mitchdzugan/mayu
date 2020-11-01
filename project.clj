@@ -1,11 +1,11 @@
-(defproject mayu "0.1.51"
+(defproject mayu "0.1.52"
   :description "FIXME: write description"
   :url "http://example.com/FIXME"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
 
   :dependencies [[org.clojure/clojure "1.10.1"]
-                 [allpa "0.1.47"]
+                 [allpa "0.1.48"]
                  [wayra "0.0.34"]
                  [org.clojure/core.async "1.1.587"]
                  [net.cgrand/macrovich "0.2.1"]

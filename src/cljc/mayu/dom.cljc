@@ -181,50 +181,14 @@
   (<#> (apply create-element args)
        :res))
 
-(defnm emit [k e]
-  (w/tell {:events {k e}}))
-
-(defnm take-cached-or-do [s k m]
-  data <- (w/gets #(-> % :cache (get s) (get k)))
-  path <- curr-unique-path
-  (if data
-    (mdo
-     (w/modify #(assoc-in % [:cache s k :using path] true))
-     [(:res data)])
-    (mdo
-     res <- m
-     (w/modify #(assoc-in % [:cache s k] {:res res
-                                          :using {path true}}))
-     [res])))
-
-(defnm provide-cache [k m]
-  (step [k :cache]
-        (mdo
-         curr <- (w/gets #(-> % :cache (get k)))
-         (w/modify #(assoc-in % [:cache k] nil))
-         res <- m
-         (w/modify #(assoc-in % [:cache k] curr))
-         [res])))
-
-(defnm collect [k mf]
-  (step k
-        (w/pass #(assoc-in %1 [:events k] [])
-                (mdo {:keys [res]} <-
-                     (w/preemptm e/preempt :e
-                                 #(mdo [res w] <- (w/listen (mf %1))
-                                       let [e (->> [:events k]
-                                                   (get-in w)
-                                                   (apply e/join))]
-                                       [{:res res :e e}]))
-                     [[res (curry update :events #(dissoc %1 k))]]))))
-
 (defn reset-used [m]
   (a/map-values (fn [desc _] (assoc desc :used? false)) m))
 
-(defn check-used [off]
+(defn check-used [off force-delete?]
   (fn [m]
     (let [reducer (fn [agg id item]
-                    (if (:used? item)
+                    (if (and (not force-delete?)
+                             (:used? item))
                       (assoc agg id item)
                       (do (off item)
                           agg)))]
@@ -246,13 +210,84 @@
   (swap! (:signals state) reset-used)
   (swap! (:binds state) reset-used))
 
-(defn post-render [state]
+(defn post-render [state force-delete?]
   (swap! (:signals state)
-         (check-used (fn [{:keys [off]}] (off))))
+         (check-used (fn [{:keys [off]}] (off)) force-delete?))
   (swap! (:binds state)
-         (check-used off-bind))
+         (check-used off-bind force-delete?))
   (swap! (:memos state)
-         (check-used off-bind)))
+         (check-used off-bind force-delete?)))
+
+(defnm take-cached-or-do [s k m]
+  {:keys [store exec]} <- (w/gets #(-> % :cache (get s)))
+  let [data (get store k)]
+  path <- curr-unique-path
+  (if data
+    (mdo
+     (w/modify #(assoc-in % [:cache s :store k :using path] true))
+     [(:res data)])
+    (exec s k path m)))
+
+(defnm provide-cache [k m]
+  (step [k :cache]
+        (mdo
+
+
+
+
+         init-writer <- w/erased
+         path <- curr-path
+         {:keys [binds signals] :as reader} <- w/ask
+         let [bind (or (get-in @binds [path :state])
+                       {:memos (atom {})
+                        :signals (atom {})
+                        :binds (atom {})})]
+         [(swap! binds #(-> %1
+                            (assoc-in [path :used?] true)
+                            (assoc-in [path :state] bind)))]
+         let [exec
+              (fnm [s k path m]
+                   let [bind {:memos (atom {})
+                              :signals (atom {})
+                              :binds (atom {})}
+                        res (->> (w/local (curry merge bind) m)
+                                 (w/exec {:init-writer init-writer
+                                          :init-state {:split-id 0}
+                                          :reader reader}))]
+                   (w/modify #(assoc-in % [:cache s :store k] {:res (:result res)
+                                                               :using {path true}
+                                                               :off (post-render bind true)}))
+                   [(:result res)])]
+
+
+
+
+
+
+
+
+         curr <- (w/gets #(-> % :cache (get k)))
+         (w/modify #(assoc-in % [:cache k] {:exec exec
+                                            :store {}}))
+         res <- m
+         (w/modify #(assoc-in % [:cache k] curr))
+         [res])))
+
+(defnm emit [k e]
+  (w/tell {:events {k e}}))
+
+(defnm collect [k mf]
+  (step k
+        (w/pass #(assoc-in %1 [:events k] [])
+                (mdo {:keys [res]} <-
+                     (w/preemptm e/preempt :e
+                                 #(mdo [res w] <- (w/listen (mf %1))
+                                       let [e (->> [:events k]
+                                                   (get-in w)
+                                                   (apply e/join))]
+                                       [{:res res :e e}]))
+                     [[res (curry update :events #(dissoc %1 k))]]))))
+
 
 (def bind-count (atom 0))
 (defnm bind-base [s f proc-input]
@@ -283,7 +318,7 @@
                                                     :init-state {:split-id
                                                                  split-id}
                                                     :reader reader}))]
-                              (post-render bind)
+                              (post-render bind false)
                               (e/push! e-request-render true)
                               res))
                        s-shadowed)
@@ -342,7 +377,7 @@
              [(pre-render state)]
              [res writer] <- (w/local (curry merge state)
                                       (w/listen m))
-             [(post-render state)]
+             [(post-render state false)]
              [(swap! memos #(assoc %1 path {:used? true
                                             :via via
                                             :res res

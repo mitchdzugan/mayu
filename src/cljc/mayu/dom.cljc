@@ -184,6 +184,28 @@
 (defnm emit [k e]
   (w/tell {:events {k e}}))
 
+(defnm take-cached-or-do [s k m]
+  data <- (w/gets #(-> % :cache (get s) (get k)))
+  path <- curr-unique-path
+  (if data
+    (mdo
+     (w/modify #(assoc-in % [:cache s k :using path] true))
+     [(:res data)])
+    (mdo
+     res <- m
+     (w/modify #(assoc-in % [:cache s k] {:res res
+                                          :using {path true}}))
+     [res])))
+
+(defnm provide-cache [k m]
+  (step [k :cache]
+        (mdo
+         curr <- (w/gets #(-> % :cache (get k)))
+         (w/modify #(assoc-in % [:cache k] nil))
+         res <- m
+         (w/modify #(assoc-in % [:cache k] curr))
+         [res])))
+
 (defnm collect [k mf]
   (step k
         (w/pass #(assoc-in %1 [:events k] [])

@@ -527,36 +527,64 @@
     <[p is-odd?]
     (dom/emit :c (dom/on-click btn))])
 
+(defui test-cached []
+  [(println "Eval in cached")]
+  <[dom/stash $= <[div "Cached DOM"]])
+
+(defui test-caches []
+  <[dom/collect-values-and-bind :c 0 $[c]=
+    <[dom/provide-cache :c $=
+      <[div {:style {:display "flex"
+                     :flex-direction "row"
+                     :margin "auto"
+                     :justify-content "center"
+                     }} $=
+        s1 <- (dom/take-cached-or-do :c :t test-cached)
+        <[dom/unstash s1]
+        <[button "dec"] d-dec >
+        <[div {:style {:margin "0 10px"}} c]
+        <[button "inc"] d-inc >
+        s2 <- (dom/take-cached-or-do :c :t test-cached)
+        <[dom/unstash s2]
+        (->> (dom/on-click d-dec)
+             (e/map #(dec c))
+             (dom/emit :c))
+        (->> (dom/on-click d-inc)
+             (e/map #(inc c))
+             (dom/emit :c))]]]
+  )
+
 (defui my-ui []
-  [(let [c (dom/render-to-string {} ssr-await-demo)]
+  <[test-caches]
+  #_[(let [c (dom/render-to-string {} ssr-await-demo)]
      (go-loop []
        (let [more (<! c)]
          (when more
            (println more)
            (recur)))))]
-  <[min-repro-5]
-  <[on-render-test]
-  <[min-repro-4]
-  <[disabled-example]
-  <[stop-prop]
-  <[div "1"]
-  <[div 1]
-  <[div nil]
-  <[div $= <[p "1"]]
-  <[min-repro-2]
-  <[min-repro-3]
-  <[ssr-await-demo]
-  <[min-repro]
-  <[animations-demo]
-  <[syntax-demo]
-  <[inputs-demo]
-  <[offs-test]
-  <[memo-test]
-  <[stash-demo1]
-  <[stash-demo2]
-  <[stash-demo3]
-  <[countdown]
-  <[scores]
-  <[special-syms])
+  #_[min-repro-5]
+  #_[on-render-test]
+  #_[min-repro-4]
+  #_[disabled-example]
+  #_[stop-prop]
+  #_[div "1"]
+  #_[div 1]
+  #_[div nil]
+  #_[div $= <[p "1"]]
+  #_[min-repro-2]
+  #_[min-repro-3]
+  #_[ssr-await-demo]
+  #_[min-repro]
+  #_[animations-demo]
+  #_[syntax-demo]
+  #_[inputs-demo]
+  #_[offs-test]
+  #_[memo-test]
+  #_[stash-demo1]
+  #_[stash-demo2]
+  #_[stash-demo3]
+  #_[countdown]
+  #_[scores]
+  #_[special-syms])
 
 

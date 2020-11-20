@@ -4,7 +4,7 @@
             [mayu.async
              :refer [go go-loop timeout <! chan >! close!]]
             [mayu.macros
-             :refer [defui ui]]
+             :refer [defui ui defui-cachable]]
             [mayu.frp.event :as e]
             [mayu.frp.signal :as s]
             [mayu.c-one :as c-one]
@@ -419,6 +419,9 @@
           s-c2 <- (s/map inc s-counter)
           <[dom/bind s-c2 $[c2]= <[p (str "c2:" c2)]]]]]])
 
+(defn log [& args]
+  #?(:clj (println args) :cljs (apply js/console.log (clj->js args))))
+
 (defn logger [k]
   (fn [a]
     (#?(:clj println :cljs js/console.log) k a)))
@@ -529,30 +532,95 @@
 
 (defui test-cached []
   [(println "Eval in cached")]
-  <[dom/stash $= <[div "Cached DOM"]])
+  <[button "Reset"] d-btn >
+  (->> (dom/on-click d-btn)
+       (e/map #(-> 0))
+       (dom/emit :c))
+  <[div "Cached DOM"])
 
+(defui signal-cached [s]
+  [(println "Creating signal")]
+  (s/map #(do (println [:over %1])
+              (quot (mod %1 12) 3))
+         s))
+
+(defui-cachable square-rootify [t s]
+  (s/map #(do (log :MAPPING_SQR_RT t %1)
+              {:raw %1 :val (#?(:clj Math/sqrt
+                                :cljs js/Math.sqrt) %1)}) s))
 (defui test-caches []
-  <[dom/collect-values-and-bind :c 0 $[c]=
-    <[dom/provide-cache :c $=
-      <[div {:style {:display "flex"
-                     :flex-direction "row"
-                     :margin "auto"
-                     :justify-content "center"
-                     }} $=
-        s1 <- (dom/take-cached-or-do :c :t test-cached)
-        <[dom/unstash s1]
-        <[button "dec"] d-dec >
-        <[div {:style {:margin "0 10px"}} c]
-        <[button "inc"] d-inc >
-        s2 <- (dom/take-cached-or-do :c :t test-cached)
-        <[dom/unstash s2]
-        (->> (dom/on-click d-dec)
-             (e/map #(dec c))
-             (dom/emit :c))
-        (->> (dom/on-click d-inc)
-             (e/map #(inc c))
-             (dom/emit :c))]]]
-  )
+  <[style (str ".container {"
+               "  display: flex;"
+               "  flex-direction: column;"
+               "}"
+               ".container > div {"
+               "  width: 400px;"
+               "  display: flex;"
+               "  flex-direction: row;"
+               "  justify-content: center;"
+               "  background: #cbcbcb;"
+               "  border-radius: 5px;"
+               "  border: 1px solid black;"
+               "}"
+               ".container > div.active {"
+               "  background: #ffbbbb;"
+               "}"
+               ".container > div > div:first-child, .container > div > div:last-child {"
+               "  flex: 0 0 100px;"
+               "}"
+               ".container > div > div:nth-child(2) {"
+               "  flex: 1;"
+               "}"
+               ".container > div > div {"
+               "  text-align: center;"
+               "}"
+               )]
+  s-timer-1 <- (s/reduce inc 0 (e/timer 1000))
+  s-timer-2 <- (s/reduce inc 0 (e/timer 620))
+  <[dom/provide-cache :cache $=
+    <[div {:class "container"} $=
+      <[dom/bind s-timer-1 $[timer1]=
+
+
+
+        let [active? (> 2 (mod timer1 7))]
+        <[div {:class {:active active?}} $=
+          <[div timer1]
+          <[div (str (if active? "A" "Ina") "ctive")]
+          <[if active?
+            <[then
+              s <- (dom/cache-first :cache square-rootify :CURR s-timer-2)
+              <[dom/bind s $[{:keys [raw val]}]=
+                <[div (str raw " : " (.toFixed val 2))]]]
+            <[else <[div]]]]
+
+
+        let [active? (< 3 (mod timer1 6))]
+        <[div {:class {:active active?}} $=
+          <[div timer1]
+          <[div (str (if active? "A" "Ina") "ctive")]
+          <[if active?
+            <[then
+              s <- (dom/cache-first :cache square-rootify :CURR s-timer-2)
+              <[dom/bind s $[{:keys [raw val]}]=
+                <[div (str raw " : " (.toFixed val 2))]]]
+            <[else <[div]]]]
+
+
+
+        let [active? (> 3 (mod (+ 1 timer1) 5))]
+        <[div {:class {:active active?}} $=
+          <[div timer1]
+          <[div (str (if active? "A" "Ina") "ctive")]
+          <[if active?
+            <[then
+              s <- (dom/cache-first :cache square-rootify :CURR s-timer-2)
+              <[dom/bind s $[{:keys [raw val]}]=
+                <[div (str raw " : " (.toFixed val 2))]]]
+            <[else <[div]]]]
+
+
+        ]]])
 
 (defui my-ui []
   <[test-caches]

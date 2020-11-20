@@ -10,11 +10,18 @@
              :refer [go go-loop timeout <! chan >! close!]]
             [mayu.dom.to-string.attrs
              :refer [render-attr-map render-class]]
-            [mayu.mdom
+            [mayu.mdom :as mdom
              :refer [->MText ->MCreateElement ->MBind ->MSSRAwait]]
             [wayra.core :as w
              :refer [defnm defm mdo fnm <#>]])
   #?(:cljs (:require-macros [mayu.dom :refer [mk-ons]])))
+
+(defn logger [k]
+  (fn [a]
+    (#?(:clj println :cljs js/console.log) #?(:clj k
+                                              :cljs (clj->js k))
+                                           #?(:clj a
+                                              :cljs (clj->js a)))))
 
 ;; TODO investigate collect-reduce-and-bind (crab) within crab within crab
 
@@ -44,7 +51,8 @@
   {:keys [path last-unique-step]} <- w/ask
   [(conj path last-unique-step)])
 
-(defnm step [label m]
+(defnm step [label-x m]
+  let [label (hash label-x)]
   {:keys [label-counts]} <- w/get
   {:keys [path unique-path last-step last-unique-step]} <- w/ask
   let [label-count (get label-counts label 0)
@@ -184,17 +192,18 @@
 (defn reset-used [m]
   (a/map-values (fn [desc _] (assoc desc :used? false)) m))
 
-(defn check-used [off force-delete?]
+(defn check-used [off]
   (fn [m]
     (let [reducer (fn [agg id item]
-                    (if (and (not force-delete?)
-                             (:used? item))
+                    (if (:used? item)
                       (assoc agg id item)
                       (do (off item)
                           agg)))]
       (reduce-kv reducer {} m))))
 
-(defn off-bind [{{:keys [memos signals binds]} :state :as bind}]
+(defn off-bind [{{:keys [memos signals binds caches]} :state :as bind}]
+  (doseq [[_ cache]  @caches]
+    ((logger :C) cache))
   (doseq [[_ memo] @memos]
     (off-bind memo))
   (reset! memos {})
@@ -206,27 +215,76 @@
   (reset! binds {}))
 
 (defn pre-render [state]
+  (swap! (:caches state) reset-used)
   (swap! (:memos state) reset-used)
   (swap! (:signals state) reset-used)
   (swap! (:binds state) reset-used))
 
-(defn post-render [state force-delete?]
+(defn post-render [state]
+  (swap! (:caches state)
+         (check-used (fn [{:keys [store]}]
+                       (doseq [[_ {:keys [off]}] store]
+                         (off)))))
   (swap! (:signals state)
-         (check-used (fn [{:keys [off]}] (off)) force-delete?))
+         (check-used (fn [{:keys [off]}] (off))))
   (swap! (:binds state)
-         (check-used off-bind force-delete?))
+         (check-used off-bind))
   (swap! (:memos state)
-         (check-used off-bind force-delete?)))
+         (check-used off-bind)))
+
+(defnm stash [m]
+  (w/pass (mdo [res w] <- (w/listen m)
+               [[{:res res :mdom (:mdom w)}
+                 (curry assoc :mdom [])]])))
+
+
+#_(defprotomethod identify-stashes [mdom id]
+  !mdom/MText (mdo [mdom])
+
+  !mdom/MCreateElement
+  (mdo children <- (w/mapm #(identify-stashes % id) (:children mdom))
+       [(-> mdom
+            (update :path #(conj % id))
+            (assoc :children children))])
+
+  !mdom/MBind
+  (mdo signal <- (bind (:signal mdom) (partial w/mapm #(identify-stashes % id)))
+       [(assoc mdom :signal signal)])
+
+  !mdom/MSSRAwait
+  (mdo children <- (w/mapm #(identify-stashes % id) (:children mdom))
+       [(assoc mdom :children children)]))
+
+(defnm unstash [{:keys [mdom res]}]
+  (w/eachm mdom #(w/tell {:mdom %1}))
+  [res])
 
 (defnm take-cached-or-do [s k m]
-  {:keys [store exec]} <- (w/gets #(-> % :cache (get s)))
-  let [data (get store k)]
+  {:keys [store exec get-cached]} <- (w/gets #(-> % :cache (get s)))
+  let [data (or (get-cached k) (get store k))]
   path <- curr-unique-path
-  (if data
+  {:keys [res events]} <-
+  (if (:off data)
     (mdo
      (w/modify #(assoc-in % [:cache s :store k :using path] true))
-     [(:res data)])
-    (exec s k path m)))
+     [data])
+    (exec s k path m))
+  (w/eachm (keys events)
+           ;; TODO These should probably be emit'd from the
+           ;; TODO cache setup position itself instead of the
+           ;; TODO invocation of the cached function but this
+           ;; TODO shouldn't effect anything for now
+           (fn [k]
+             (w/eachm (-> events (get k))
+                      #(w/tell {:events {k %1}}))))
+  (unstash res))
+
+(defnm cache-first [s cachable & args]
+  #_[((logger :CF) cachable)]
+  #_[((logger :CF) args)]
+  (take-cached-or-do s
+                     (apply (:ident cachable) args)
+                     (apply (:body cachable) args)))
 
 (defnm provide-cache [k m]
   (step [k :cache]
@@ -237,27 +295,26 @@
 
          init-writer <- w/erased
          path <- curr-path
-         {:keys [binds signals] :as reader} <- w/ask
-         let [bind (or (get-in @binds [path :state])
-                       {:memos (atom {})
-                        :signals (atom {})
-                        :binds (atom {})})]
-         [(swap! binds #(-> %1
-                            (assoc-in [path :used?] true)
-                            (assoc-in [path :state] bind)))]
-         let [exec
+         {:keys [caches] :as reader} <- w/ask
+         let [cache-store (->> (get-in @caches [path :store] {})
+                               (a/map-values #(assoc %1 :using {})))
+              exec
               (fnm [s k path m]
-                   let [bind {:memos (atom {})
+                   let [bind {:caches (atom {})
+                              :memos (atom {})
                               :signals (atom {})
                               :binds (atom {})}
-                        res (->> (w/local (curry merge bind) m)
+                        res (->> (w/local (curry merge bind) (stash m))
                                  (w/exec {:init-writer init-writer
                                           :init-state {:split-id 0}
                                           :reader reader}))]
                    (w/modify #(assoc-in % [:cache s :store k] {:res (:result res)
+                                                               :events (-> res :writer :events)
                                                                :using {path true}
-                                                               :off (post-render bind true)}))
-                   [(:result res)])]
+                                                               :off (fn []
+                                                                      (off-bind {:state bind}))}))
+                   [{:res (:result res)
+                     :events (-> res :writer :events)}])]
 
 
 
@@ -268,8 +325,36 @@
 
          curr <- (w/gets #(-> % :cache (get k)))
          (w/modify #(assoc-in % [:cache k] {:exec exec
-                                            :store {}}))
+                                            :swap-store (fn [f]
+                                                          (swap! caches (fn [a]
+                                                                          (let [res
+                                                                                (update-in a
+                                                                                           [path
+                                                                                            :store]
+                                                                                           f)]
+                                                                            #_((logger :P)
+                                                                             (-> a
+                                                                                 (get path)
+                                                                                 :store))
+                                                                            #_((logger :C)
+                                                                             (-> res
+                                                                                 (get path)
+                                                                                 :store))
+                                                                            res
+                                                                            ))))
+                                            :get-cached (fn [k]
+                                                          (get-in @caches [path :store k]))
+                                            :store cache-store}))
          res <- m
+         cache-store <- (w/gets #(-> % :cache (get k) :store))
+         [(swap! caches #(assoc % path {:used? true
+                                        :store (->> cache-store
+                                                    (reduce-kv (fn [store k data]
+                                                                 (if (empty? (:using data))
+                                                                   (do ((:off data))
+                                                                       store)
+                                                                   (assoc store k data)))
+                                                               {}))}))]
          (w/modify #(assoc-in % [:cache k] curr))
          [res])))
 
@@ -298,7 +383,10 @@
          path <- curr-path
          {:keys [binds signals] :as reader} <- w/ask
          let [bind (or (get-in @binds [path :state])
-                       {:memos (atom {})
+                       {:first (atom true)
+                        :last-using (atom {})
+                        :caches (atom {})
+                        :memos (atom {})
                         :signals (atom {})
                         :binds (atom {})})]
          [(swap! binds #(-> %1
@@ -310,20 +398,108 @@
          [(swap! bind-count inc)]
          (step @bind-count
                (mdo
+                cache <- (w/gets :cache)
                 s-exec <-
                 (s/map #(do (pre-render bind)
                             (let [split-id (s/inst! s-split-id)
+                                  fresh-cache
+                                  (a/map-values
+                                   (fn [data s]
+                                     ((:swap-store data)
+                                      (fn [curr-global]
+                                        (let [res
+                                              (->> (get @(:last-using bind) s)
+                                                   (reduce-kv (fn [store k using]
+                                                                (update-in store
+                                                                           [k :using]
+                                                                           (fn [u]
+                                                                             (reduce dissoc
+                                                                                     u
+                                                                                     (keys using)))))
+                                                              (merge-with (fn [x y]
+                                                                            (cond
+                                                                              (nil? x) y
+                                                                              (nil? y) x
+                                                                              (map? x) (merge x y)
+                                                                              :else y))
+                                                                          (:store data)
+                                                                          curr-global)))]
+                                          res)))
+                                     (assoc data :store {}))
+                                   cache)
                                   res (->> (w/local (curry merge bind) (f %1))
                                            (w/exec {:init-writer init-writer
-                                                    :init-state {:split-id
+                                                    :init-state {:cache fresh-cache
+                                                                 :split-id
                                                                  split-id}
-                                                    :reader reader}))]
-                              (post-render bind false)
+                                                    :reader reader}))
+                                  used
+                                  (->> res
+                                       :state
+                                       :cache
+                                       (reduce-kv
+                                        (fn [used s {:keys [store]}]
+                                          (->> store
+                                               (reduce-kv (fn [used k {:keys [using]}]
+                                                            (assoc-in used [s k] using))
+                                                          used)))
+                                        {}))]
+                              (post-render bind)
+                              (when-not @(:first bind)
+                                (doseq [s (keys cache)]
+                                  (let [{:keys [swap-store]} (get cache s)
+                                        res-store (-> res :state :cache (get s) :store)
+                                        ks (keys (merge res-store (get @(:last-using bind) s)))]
+                                    (when-not (empty? ks)
+                                      (swap-store (fn [curr]
+                                                    (->> ks
+                                                         (reduce (fn [store k]
+                                                                   (let [global (get store k)
+                                                                         local (get res-store k)]
+                                                                     (cond
+                                                                       (and (empty? (:using global))
+                                                                            (empty? (:using local)))
+                                                                       (do ((or (:off local)
+                                                                                (:off global)))
+                                                                           #_((logger :OFF-L) local)
+                                                                           #_((logger :OFF-G) global)
+                                                                           (dissoc store k))
+                                                                       (nil? (:off local))
+                                                                       (->> local
+                                                                            :using
+                                                                            (partial merge)
+                                                                            (update-in store
+                                                                                       [k :using]))
+                                                                       :else
+                                                                       (assoc store k local))))
+                                                                 curr))))))))
                               (e/push! e-request-render true)
+                              (reset! (:first bind) false)
+                              (reset! (:last-using bind) used)
                               res))
                        s-shadowed)
                 (w/modify #(assoc %1 :split-id (get-in (s/inst! s-exec)
                                                        [:state :split-id])))
+                s-cache <- (s/map (comp :cache :state) s-exec)
+                let [new-cache (->> (s/inst! s-cache)
+                                    (reduce-kv (fn [cache s data]
+                                                 (->> data
+                                                      :store
+                                                      (reduce-kv (fn [cache k data]
+                                                                   (if (:off data)
+                                                                     (assoc-in cache
+                                                                               [s :store k]
+                                                                               data)
+                                                                     (->> data
+                                                                          :using
+                                                                          (partial merge)
+                                                                          (update-in cache
+                                                                                     [s
+                                                                                      :store
+                                                                                      k :using]))))
+                                                                 cache)))
+                                               cache))]
+                (w/modify #(assoc % :cache new-cache))
                 s-writer <- (s/map :writer s-exec)
                 s-events <- (s/map :events s-writer)
                 s-result <- (s/map :result s-exec)
@@ -363,7 +539,8 @@
              let [memo (get @memos path)
                   skip? (and memo (= (:via memo) via))
                   state (or (:state memo)
-                            {:memos (atom {})
+                            {:caches (atom {})
+                             :memos (atom {})
                              :signals (atom {})
                              :binds (atom {})})]
              skip? --> (mdo (w/eachm (-> memo :writer :mdom)
@@ -377,7 +554,7 @@
              [(pre-render state)]
              [res writer] <- (w/local (curry merge state)
                                       (w/listen m))
-             [(post-render state false)]
+             [(post-render state)]
              [(swap! memos #(assoc %1 path {:used? true
                                             :via via
                                             :res res
@@ -404,13 +581,6 @@
 
 (defn collect-values-and-bind [k i fm]
   (collect-reduce-and-bind k #(-> %2) i fm))
-
-(defnm stash [m]
-  (w/pass (mdo [res w] <- (w/listen m)
-               [[{:res res :mdom (:mdom w)}
-                 (curry assoc :mdom [])]])))
-
-(defnm unstash [{:keys [mdom]}] (w/eachm mdom #(w/tell {:mdom %1})))
 
 (defnm ssr-await [ready? timeout fallback good]
   prev-split-path <- (w/asks :split-path)
@@ -470,6 +640,7 @@
                 :step-fn step
                 :active-signal active-signal
                 :set-active set-active
+                :caches (atom {})
                 :signals (atom {})
                 :binds (atom {})
                 :memos (atom {})

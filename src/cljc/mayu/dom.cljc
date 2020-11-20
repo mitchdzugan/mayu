@@ -16,13 +16,6 @@
              :refer [defnm defm mdo fnm <#>]])
   #?(:cljs (:require-macros [mayu.dom :refer [mk-ons]])))
 
-(defn logger [k]
-  (fn [a]
-    (#?(:clj println :cljs js/console.log) #?(:clj k
-                                              :cljs (clj->js k))
-                                           #?(:clj a
-                                              :cljs (clj->js a)))))
-
 ;; TODO investigate collect-reduce-and-bind (crab) within crab within crab
 
 (defm env (w/asks :env))
@@ -203,7 +196,8 @@
 
 (defn off-bind [{{:keys [memos signals binds caches]} :state :as bind}]
   (doseq [[_ cache]  @caches]
-    ((logger :C) cache))
+    ;; TODO
+    #_((logger :C) cache))
   (doseq [[_ memo] @memos]
     (off-bind memo))
   (reset! memos {})
@@ -279,12 +273,9 @@
                       #(w/tell {:events {k %1}}))))
   (unstash res))
 
-(defnm cache-first [s cachable & args]
-  #_[((logger :CF) cachable)]
-  #_[((logger :CF) args)]
-  (take-cached-or-do s
-                     (apply (:ident cachable) args)
-                     (apply (:body cachable) args)))
+(defnm cache-first [s m]
+  {:keys [ident body]} <- m
+  (take-cached-or-do s ident body))
 
 (defnm provide-cache [k m]
   (step [k :cache]
@@ -327,21 +318,9 @@
          (w/modify #(assoc-in % [:cache k] {:exec exec
                                             :swap-store (fn [f]
                                                           (swap! caches (fn [a]
-                                                                          (let [res
-                                                                                (update-in a
-                                                                                           [path
-                                                                                            :store]
-                                                                                           f)]
-                                                                            #_((logger :P)
-                                                                             (-> a
-                                                                                 (get path)
-                                                                                 :store))
-                                                                            #_((logger :C)
-                                                                             (-> res
-                                                                                 (get path)
-                                                                                 :store))
-                                                                            res
-                                                                            ))))
+                                                                          (update-in a
+                                                                                     [path :store]
+                                                                                     f))))
                                             :get-cached (fn [k]
                                                           (get-in @caches [path :store k]))
                                             :store cache-store}))
@@ -461,8 +440,6 @@
                                                                             (empty? (:using local)))
                                                                        (do ((or (:off local)
                                                                                 (:off global)))
-                                                                           #_((logger :OFF-L) local)
-                                                                           #_((logger :OFF-G) global)
                                                                            (dissoc store k))
                                                                        (nil? (:off local))
                                                                        (->> local

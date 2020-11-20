@@ -185,9 +185,7 @@
                    (-> (if has-to-id? (apply to-ident args) args)
                        (conj as-kw)))
            args-sym (gensym "args")]
-       `(def ~label
-          {:ident (fn [& ~args-sym]
-                    (-> ~(if has-to-id? `(apply ~to-ident ~args-sym) args-sym)
-                        (conj ~as-kw)))
-           :body (fn ~args
-                   (dom/step ~as-kw (ui ~@(if has-to-id? rest body))))}))))
+       `(defui ~label ~args
+          [{:ident (-> ~(if has-to-id? `(apply ~to-ident ~args) args)
+                       (conj ~as-kw))
+            :body (dom/step ~as-kw (ui ~@(if has-to-id? rest body)))}]))))

@@ -530,30 +530,98 @@
     <[p is-odd?]
     (dom/emit :c (dom/on-click btn))])
 
-(defui test-cached []
-  [(println "Eval in cached")]
-  <[button "Reset"] d-btn >
-  (->> (dom/on-click d-btn)
-       (e/map #(-> 0))
-       (dom/emit :c))
-  <[div "Cached DOM"])
-
-(defui signal-cached [s]
-  [(println "Creating signal")]
-  (s/map #(do (println [:over %1])
-              (quot (mod %1 12) 3))
-         s))
+(defn sqrt [v]
+  #?(:clj (Math/sqrt v)
+     :cljs (js/Math.sqrt v)))
 
 (defui-cachable square-rootify [t s]
   (s/map #(do (log :MAPPING_SQR_RT t %1)
-              {:raw %1 :val (#?(:clj Math/sqrt
-                                :cljs js/Math.sqrt) %1)}) s))
+              {:raw %1 :val (sqrt %1)}) s))
+
+(defui test-row [timer1 active? s-timer-2]
+  <[div {:class {:active active?}} $=
+    <[div timer1]
+    <[div (str (if active? "A" "Ina") "ctive")]
+    <[if active?
+      <[then
+        s-sqrt <- <[dom/cache-first :cache $=
+                    <[square-rootify :CURR s-timer-2]]
+        <[dom/bind s-sqrt $[{:keys [raw val]}]=
+          <[div (str raw " : " (.toFixed val 2))]]]
+      <[else <[div]]]])
+
+(defui test-cache-curr []
+  s-timer-1 <- (s/reduce inc 0 (e/timer 11000))
+  s-timer-2 <- (s/reduce inc 0 (e/timer 1389))
+  <[dom/provide-cache :cache $=
+    <[div {:class "container"} $=
+      <[dom/bind s-timer-1 $[timer1]=
+        let [row-1-active? (> 2 (mod timer1 7))
+             row-2-active? (< 3 (mod timer1 6))
+             row-3-active? (> 3 (mod (+ 1 timer1) 5))]
+        <[test-row timer1 row-1-active? s-timer-2]
+        <[test-row timer1 row-2-active? s-timer-2]
+        <[test-row timer1 row-3-active? s-timer-2]]]])
+
+(defui square-rootify- [t s]
+  (s/map #(do (log :MAPPING_SQR_RT t %1)
+              {:raw %1 :val (sqrt %1)}) s))
+
+(defui test-row-old1 [timer1 active? s-timer-2]
+  <[div {:class {:active active?}} $=
+    <[div timer1]
+    <[div (str (if active? "A" "Ina") "ctive")]
+    <[if active?
+      <[then
+        s-sqrt <- (square-rootify- :OLD1 s-timer-2)
+        <[dom/bind s-sqrt $[{:keys [raw val]}]=
+          <[div (str raw " : " (.toFixed val 2))]]]
+      <[else <[div]]]])
+
+(defui test-cache-old1 []
+  s-timer-1 <- (s/reduce inc 0 (e/timer 11000))
+  s-timer-2 <- (s/reduce inc 0 (e/timer 1389))
+  <[div {:class "container"} $=
+    <[dom/bind s-timer-1 $[timer1]=
+      let [row-1-active? (> 2 (mod timer1 7))
+           row-2-active? (< 3 (mod timer1 6))
+           row-3-active? (> 3 (mod (+ 1 timer1) 5))]
+      <[test-row-old1 timer1 row-1-active? s-timer-2]
+      <[test-row-old1 timer1 row-2-active? s-timer-2]
+      <[test-row-old1 timer1 row-3-active? s-timer-2]]])
+
+(defui test-row-old2 [timer1 active? s-timer-2]
+  <[div {:class {:active active?}} $=
+    <[div timer1]
+    <[div (str (if active? "A" "Ina") "ctive")]
+    <[if active?
+      <[then
+        s-sqrt <- (dom/envs :s-sqrt)
+        <[dom/bind s-sqrt $[{:keys [raw val]}]=
+          <[div (str raw " : " (.toFixed val 2))]]]
+      <[else <[div]]]])
+
+(defui test-cache-old2 []
+  s-timer-1 <- (s/reduce inc 0 (e/timer 11000))
+  s-timer-2 <- (s/reduce inc 0 (e/timer 1389))
+  s-sqrt <- (square-rootify- :OLD2 s-timer-2)
+  <[dom/assoc-env :s-sqrt s-sqrt $=
+    <[div {:class "container"} $=
+      <[dom/bind s-timer-1 $[timer1]=
+        let [row-1-active? (> 2 (mod timer1 7))
+             row-2-active? (< 3 (mod timer1 6))
+             row-3-active? (> 3 (mod (+ 1 timer1) 5))]
+        <[test-row-old2 timer1 row-1-active? s-timer-2]
+        <[test-row-old2 timer1 row-2-active? s-timer-2]
+        <[test-row-old2 timer1 row-3-active? s-timer-2]]]])
+
 (defui test-caches []
   <[style (str ".container {"
                "  display: flex;"
                "  flex-direction: column;"
                "}"
                ".container > div {"
+               "  margin: 5px;"
                "  width: 400px;"
                "  display: flex;"
                "  flex-direction: row;"
@@ -566,6 +634,7 @@
                "  background: #ffbbbb;"
                "}"
                ".container > div > div:first-child, .container > div > div:last-child {"
+               "  font-size: 12px;"
                "  flex: 0 0 100px;"
                "}"
                ".container > div > div:nth-child(2) {"
@@ -575,84 +644,48 @@
                "  text-align: center;"
                "}"
                )]
-  s-timer-1 <- (s/reduce inc 0 (e/timer 1000))
-  s-timer-2 <- (s/reduce inc 0 (e/timer 620))
-  <[dom/provide-cache :cache $=
-    <[div {:class "container"} $=
-      <[dom/bind s-timer-1 $[timer1]=
+  ; const urlParams = new URLSearchParams(window.location.search);
+  ; const myParam = urlParams.get('myParam');
 
-
-
-        let [active? (> 2 (mod timer1 7))]
-        <[div {:class {:active active?}} $=
-          <[div timer1]
-          <[div (str (if active? "A" "Ina") "ctive")]
-          <[if active?
-            <[then
-              s <- (dom/cache-first :cache square-rootify :CURR s-timer-2)
-              <[dom/bind s $[{:keys [raw val]}]=
-                <[div (str raw " : " (.toFixed val 2))]]]
-            <[else <[div]]]]
-
-
-        let [active? (< 3 (mod timer1 6))]
-        <[div {:class {:active active?}} $=
-          <[div timer1]
-          <[div (str (if active? "A" "Ina") "ctive")]
-          <[if active?
-            <[then
-              s <- (dom/cache-first :cache square-rootify :CURR s-timer-2)
-              <[dom/bind s $[{:keys [raw val]}]=
-                <[div (str raw " : " (.toFixed val 2))]]]
-            <[else <[div]]]]
-
-
-
-        let [active? (> 3 (mod (+ 1 timer1) 5))]
-        <[div {:class {:active active?}} $=
-          <[div timer1]
-          <[div (str (if active? "A" "Ina") "ctive")]
-          <[if active?
-            <[then
-              s <- (dom/cache-first :cache square-rootify :CURR s-timer-2)
-              <[dom/bind s $[{:keys [raw val]}]=
-                <[div (str raw " : " (.toFixed val 2))]]]
-            <[else <[div]]]]
-
-
-        ]]])
+  let [url-params #?(:clj nil
+                     :cljs (js/URLSearchParams. (.. js/window -location -search)))
+       my-param (.get url-params "impl")]
+  <[case my-param
+    <["old1" <[test-cache-old1]]
+    <["old2" <[test-cache-old2]]
+    <[:else <[test-cache-curr]]])
 
 (defui my-ui []
-  <[test-caches]
-  #_[(let [c (dom/render-to-string {} ssr-await-demo)]
+  [(let [c (dom/render-to-string {} ssr-await-demo)]
      (go-loop []
        (let [more (<! c)]
          (when more
            (println more)
            (recur)))))]
-  #_[min-repro-5]
-  #_[on-render-test]
-  #_[min-repro-4]
-  #_[disabled-example]
-  #_[stop-prop]
-  #_[div "1"]
-  #_[div 1]
-  #_[div nil]
-  #_[div $= <[p "1"]]
-  #_[min-repro-2]
-  #_[min-repro-3]
-  #_[ssr-await-demo]
-  #_[min-repro]
-  #_[animations-demo]
-  #_[syntax-demo]
-  #_[inputs-demo]
-  #_[offs-test]
-  #_[memo-test]
-  #_[stash-demo1]
-  #_[stash-demo2]
-  #_[stash-demo3]
-  #_[countdown]
-  #_[scores]
-  #_[special-syms])
+  <[min-repro-5]
+  <[on-render-test]
+  <[min-repro-4]
+  <[disabled-example]
+  <[stop-prop]
+  <[div "1"]
+  <[div 1]
+  <[div nil]
+  <[div $= <[p "1"]]
+  <[min-repro-2]
+  <[min-repro-3]
+  <[ssr-await-demo]
+  <[min-repro]
+  <[animations-demo]
+  <[syntax-demo]
+  <[inputs-demo]
+  <[offs-test]
+  <[memo-test]
+  <[stash-demo1]
+  <[stash-demo2]
+  <[stash-demo3]
+  <[countdown]
+  <[scores]
+  <[test-caches]
+  <[special-syms])
 
 

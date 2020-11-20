@@ -4,7 +4,7 @@
             [mayu.async
              :refer [go go-loop timeout <! chan >! close!]]
             [mayu.macros
-             :refer [defui ui defui-cachable]]
+             :refer [defui ui defui-cached]]
             [mayu.frp.event :as e]
             [mayu.frp.signal :as s]
             [mayu.c-one :as c-one]
@@ -534,7 +534,7 @@
   #?(:clj (Math/sqrt v)
      :cljs (js/Math.sqrt v)))
 
-(defui-cachable square-rootify [t s]
+(defui-cached square-rootify :cache [t s]
   (s/map #(do (log :MAPPING_SQR_RT t %1)
               {:raw %1 :val (sqrt %1)}) s))
 
@@ -544,8 +544,7 @@
     <[div (str (if active? "A" "Ina") "ctive")]
     <[if active?
       <[then
-        s-sqrt <- <[dom/cache-first :cache $=
-                    <[square-rootify :CURR s-timer-2]]
+        s-sqrt <- <[square-rootify :CURR s-timer-2]
         <[dom/bind s-sqrt $[{:keys [raw val]}]=
           <[div (str raw " : " (.toFixed val 2))]]]
       <[else <[div]]]])
@@ -650,42 +649,45 @@
   let [url-params #?(:clj nil
                      :cljs (js/URLSearchParams. (.. js/window -location -search)))
        my-param (.get url-params "impl")]
+
   <[case my-param
     <["old1" <[test-cache-old1]]
     <["old2" <[test-cache-old2]]
     <[:else <[test-cache-curr]]])
 
 (defui my-ui []
-  [(let [c (dom/render-to-string {} ssr-await-demo)]
-     (go-loop []
-       (let [more (<! c)]
-         (when more
-           (println more)
-           (recur)))))]
-  <[min-repro-5]
-  <[on-render-test]
-  <[min-repro-4]
-  <[disabled-example]
-  <[stop-prop]
-  <[div "1"]
-  <[div 1]
-  <[div nil]
-  <[div $= <[p "1"]]
-  <[min-repro-2]
-  <[min-repro-3]
-  <[ssr-await-demo]
-  <[min-repro]
-  <[animations-demo]
-  <[syntax-demo]
-  <[inputs-demo]
-  <[offs-test]
-  <[memo-test]
-  <[stash-demo1]
-  <[stash-demo2]
-  <[stash-demo3]
-  <[countdown]
-  <[scores]
-  <[test-caches]
-  <[special-syms])
+  <[div]
+  <[div $=
+    [(let [c (dom/render-to-string {} ssr-await-demo)]
+       (go-loop []
+         (let [more (<! c)]
+           (when more
+             (println more)
+             (recur)))))]
+    <[min-repro-5]
+    <[on-render-test]
+    <[min-repro-4]
+    <[disabled-example]
+    <[stop-prop]
+    <[div "1"]
+    <[div 1]
+    <[div nil]
+    <[div $= <[p "1"]]
+    <[min-repro-2]
+    <[min-repro-3]
+    <[ssr-await-demo]
+    <[min-repro]
+    <[animations-demo]
+    <[syntax-demo]
+    <[inputs-demo]
+    <[offs-test]
+    <[memo-test]
+    <[stash-demo1]
+    <[stash-demo2]
+    <[stash-demo3]
+    <[countdown]
+    <[scores]
+    <[test-caches]
+    <[special-syms]])
 
 

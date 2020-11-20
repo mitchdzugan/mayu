@@ -3,7 +3,7 @@
              :refer [mdo defnm fnm <#>]]
             [mayu.tags :as tags]
             [mayu.dom :as dom])
-  #?(:cljs (:require-macros [mayu.macros :refer [ui defui defui-cachable]])))
+  #?(:cljs (:require-macros [mayu.macros :refer [ui defui defui-cached]])))
 
 (comment :special-cases
          <[if bool
@@ -176,7 +176,7 @@
      `(defn ~label ~args (dom/step ~(str *ns* "." label) (ui ~@body)))))
 
 #?(:clj
-   (defmacro defui-cachable [label args & body]
+   (defmacro defui-cached [label cache args & body]
      (let [curr-ns (str *ns*)
            as-kw (keyword curr-ns (name label))
            [id-declare to-ident & rest] body
@@ -186,6 +186,8 @@
                        (conj as-kw)))
            args-sym (gensym "args")]
        `(defui ~label ~args
-          [{:ident (-> ~(if has-to-id? `(apply ~to-ident ~args) args)
-                       (conj ~as-kw))
-            :body (dom/step ~as-kw (ui ~@(if has-to-id? rest body)))}]))))
+          ~'< [dom/take-cached-or-do
+               ~cache
+               (-> ~(if has-to-id? `(apply ~to-ident ~args) args)
+                   (conj ~as-kw)) ~'$=
+               ~@(if has-to-id? rest body)]))))

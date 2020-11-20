@@ -194,10 +194,12 @@
                           agg)))]
       (reduce-kv reducer {} m))))
 
-(defn off-bind [{{:keys [memos signals binds caches]} :state :as bind}]
+(defn off-bind [{{:keys [memos signals binds caches last-using]} :state :as bind}]
+  (when last-using (reset! last-using nil))
   (doseq [[_ cache]  @caches]
-    ;; TODO
-    #_((logger :C) cache))
+    (doseq [[_ {:keys [off]}] (:store cache)]
+      (off)))
+  (reset! caches {})
   (doseq [[_ memo] @memos]
     (off-bind memo))
   (reset! memos {})

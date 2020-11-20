@@ -18,6 +18,16 @@
 
 ;; TODO investigate collect-reduce-and-bind (crab) within crab within crab
 
+(defn merge-stores [a b]
+  (merge-with (fn [x y]
+                (cond
+                  (nil? x) y
+                  (nil? y) x
+                  (map? x) (merge x y)
+                  :else y))
+              a
+              b))
+
 (defm env (w/asks :env))
 
 (defnm envs [f]
@@ -295,19 +305,26 @@
                                (a/map-values #(assoc %1 :using {})))
               exec
               (fnm [s k path m]
+                   cache <- (w/gets :cache)
                    let [bind {:caches (atom {})
                               :memos (atom {})
                               :signals (atom {})
                               :binds (atom {})}
                         res (->> (w/local (curry merge bind) (stash m))
                                  (w/exec {:init-writer init-writer
-                                          :init-state {:split-id 0}
+                                          :init-state {:cache (a/map-values #(assoc % :store {})
+                                                                            cache)
+                                                       :split-id 0}
                                           :reader reader}))]
-                   (w/modify #(assoc-in % [:cache s :store k] {:res (:result res)
-                                                               :events (-> res :writer :events)
-                                                               :using {path true}
-                                                               :off (fn []
-                                                                      (off-bind {:state bind}))}))
+                   (w/modify #(-> %
+                                  (update :cache (partial merge-with
+                                                          merge-stores
+                                                          (-> res :state :cache)))
+                                  (assoc-in [:cache s :store k] {:res (:result res)
+                                                                 :events (-> res :writer :events)
+                                                                 :using {path true}
+                                                                 :off (fn []
+                                                                        (off-bind {:state bind}))})))
                    [{:res (:result res)
                      :events (-> res :writer :events)}])]
 
@@ -399,14 +416,8 @@
                                                                              (reduce dissoc
                                                                                      u
                                                                                      (keys using)))))
-                                                              (merge-with (fn [x y]
-                                                                            (cond
-                                                                              (nil? x) y
-                                                                              (nil? y) x
-                                                                              (map? x) (merge x y)
-                                                                              :else y))
-                                                                          (:store data)
-                                                                          curr-global)))]
+                                                              (merge-stores (:store data)
+                                                                            curr-global)))]
                                           res)))
                                      (assoc data :store {}))
                                    cache)

@@ -256,7 +256,7 @@
   [res])
 
 (defnm take-cached-or-do [s k m]
-  {:keys [store exec get-cached]} <- (w/gets #(-> % :cache (get s)))
+  {:keys [store exec get-cached swap-store]} <- (w/gets #(-> % :cache (get s)))
   let [data (or (get-cached k) (get store k))]
   path <- curr-unique-path
   {:keys [res events]} <-
@@ -264,7 +264,9 @@
     (mdo
      (w/modify #(assoc-in % [:cache s :store k :using path] true))
      [data])
-    (exec s k path m))
+    (mdo
+     [(swap-store #(-> store))]
+     (exec s k path m)))
   (w/eachm (keys events)
            ;; TODO These should probably be emit'd from the
            ;; TODO cache setup position itself instead of the

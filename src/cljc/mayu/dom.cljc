@@ -257,6 +257,7 @@
 
 (defnm take-cached-or-do [s k m]
   {:keys [store exec get-cached swap-store]} <- (w/gets #(-> % :cache (get s)))
+  [(swap-store #(merge store %))]
   let [data (or (get-cached k) (get store k))]
   path <- curr-unique-path
   {:keys [res events]} <-
@@ -265,7 +266,6 @@
      (w/modify #(assoc-in % [:cache s :store k :using path] true))
      [data])
     (mdo
-     [(swap-store #(-> store))]
      (exec s k path m)))
   (w/eachm (keys events)
            ;; TODO These should probably be emit'd from the

@@ -267,13 +267,15 @@
 
 (defnm take-cached-or-do [s k m]
   {:keys [store exec get-cached swap-store]} <- (w/gets #(-> % :cache (get s)))
-  [(swap-store #(merge store %))]
+  [(swap-store #(merge-stores store %))]
   let [data (or (get-cached k) (get store k))]
   path <- curr-unique-path
   {:keys [res events]} <-
   (if (:off data)
     (mdo
-     (w/modify #(assoc-in % [:cache s :store k :using path] true))
+     (w/modify #(-> (fn [state [s k]]
+                      (assoc-in state [:cache s :store k :using path] true))
+                    (reduce % (conj (:used data) [s k]))))
      [data])
     (mdo
      (exec s k path m)))
@@ -315,7 +317,11 @@
                                           :init-state {:cache (a/map-values #(assoc % :store {})
                                                                             cache)
                                                        :split-id 0}
-                                          :reader reader}))]
+                                          :reader reader}))
+                        used (->> (-> res :state :cache)
+                                  (reduce-kv (fn [used s {:keys [store]}]
+                                               (concat used (map #(-> [s %]) (keys store))))
+                                             []))]
                    (w/modify #(-> %
                                   (update :cache (partial merge-with
                                                           merge-stores
@@ -323,6 +329,7 @@
                                   (assoc-in [:cache s :store k] {:res (:result res)
                                                                  :events (-> res :writer :events)
                                                                  :using {path true}
+                                                                 :used used
                                                                  :off (fn []
                                                                         (off-bind {:state bind}))})))
                    [{:res (:result res)

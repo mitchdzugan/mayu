@@ -1,4 +1,4 @@
-(defproject mayu "0.1.56"
+(defproject mayu "0.1.57"
   :description "FIXME: write description"
   :url "http://example.com/FIXME"
   :license {:name "Eclipse Public License"

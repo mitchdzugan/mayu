@@ -119,9 +119,12 @@
   a-mutable-els <- (w/asks :a-mutable-els)
   to-js <- (w/asks :to-js)
   path <- curr-unique-path
-  let [el (get @a-mutable-els path)]
+  let [el (get @a-mutable-els path)
+       updated? (empty? (some-> el
+                                (aget "__mayu_buffered_input")
+                                deref))]
   [(doseq [k mutable-keys]
-     (when (and el (contains? attrs k))
+     (when (and el (contains? attrs k) updated?)
        (aset el "__mayu_set?" true)
        (aset el (name k) (k attrs))))]
   res <- (w/local #(merge %1 {:parent-path path}) m)

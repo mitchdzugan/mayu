@@ -12,6 +12,9 @@
             [mayu.dom :as dom]
             [mayu.dom.to-string.attrs :as attrs]))
 
+(defn log [& args]
+  #?(:clj (println args) :cljs (apply js/console.log (clj->js args))))
+
 (defui my-component [n]
   (= 0 n) --> <[span "loading"]
   <[ul $=
@@ -307,10 +310,10 @@
       ;; as its input signal changes.
       <[apply s/unwrap-event
         <[dom/bind sig $[val]=
-          <[button "Btn"] el-btn >
-          (dom/consume! (dom/on-click el-btn) #(do (println (str "Clicked! " @cc))
-                                                   (swap! cc inc)))
-          <[input {:value val}] el-input >
+          let [mcc @cc]
+          [(swap! cc inc)]
+          <[button "Btn"]
+          <[input {:id "xD" :value val}] el-input >
           [(->> (dom/on-input el-input)
                 (e/map #(.. % -target -value))
                 (#(e/dedup % val)))]]]]])
@@ -318,10 +321,10 @@
 (defui inputs-demo []
   <[dom/collect-values ::upper "" $=
     e-changed <- <[styled-input ::upper "Force uppercase"]
-    (dom/emit ::upper (e/map #(do (println (slow-fib 40))
+    (dom/emit ::upper (e/map #(do (log % (slow-fib 28))
                                   (clojure.string/upper-case %))
                              e-changed))]
-  <[dom/collect-values ::max-5 "" $=
+  #_[dom/collect-values ::max-5 "" $=
     e-changed <- <[styled-input ::max-5 "Max 5 chars"]
     (dom/emit ::max-5 (e/filter #(<= (count %1) 5) e-changed))])
 
@@ -418,9 +421,6 @@
           <[p "Odd Page"]
           s-c2 <- (s/map inc s-counter)
           <[dom/bind s-c2 $[c2]= <[p (str "c2:" c2)]]]]]])
-
-(defn log [& args]
-  #?(:clj (println args) :cljs (apply js/console.log (clj->js args))))
 
 (defn logger [k]
   (fn [a]
@@ -656,8 +656,8 @@
     <[:else <[test-cache-curr]]])
 
 (defui my-ui []
-  <[div]
-  <[div $=
+  <[inputs-demo]
+  #_[div $=
     [(let [c (dom/render-to-string {} ssr-await-demo)]
        (go-loop []
          (let [more (<! c)]

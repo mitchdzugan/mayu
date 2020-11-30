@@ -120,11 +120,12 @@
   to-js <- (w/asks :to-js)
   path <- curr-unique-path
   let [el (get @a-mutable-els path)
+       buffering? (some-> el (aget "__mayu_buffering?"))
        updated? (empty? (some-> el
                                 (aget "__mayu_buffered_input")
                                 deref))]
   [(doseq [k mutable-keys]
-     (when (and el (contains? attrs k) updated?)
+     (when (and el (contains? attrs k) (or updated? buffering?))
        (aset el "__mayu_set?" true)
        (aset el (name k) (k attrs))))]
   res <- (w/local #(merge %1 {:parent-path path}) m)
@@ -164,12 +165,14 @@
                         (aset el "__mayu_events" (assoc existing target res))
                         res))
                     (fn [send-self! on?]
+                      (aset el "__mayu_buffering?" true)
                       (loop []
                         (when (and (on?) (not (empty? @buffered)))
                           (let [v (peek @buffered)]
                             (swap! buffered pop)
                             (send-self! v)
-                            (recur)))))))))))]
+                            (recur))))
+                      (aset el "__mayu_buffering?" false))))))))]
   [[{:res res :make-event-from-target make-event-from-target}
     (curry update :mdom #(-> [(->MCreateElement tag key path attrs %1)]))]])
 

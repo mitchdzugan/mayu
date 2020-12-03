@@ -126,8 +126,10 @@
                                 deref))]
   [(doseq [k mutable-keys]
      (when (and el (contains? attrs k) (or updated? buffering?))
-       (aset el "__mayu_set?" true)
-       (aset el (name k) (k attrs))))]
+       (when (= (aget el (str "__mayu_procd_" (name k)))
+                (aget el (name k)))
+         (aset el "__mayu_set?" true)
+         (aset el (name k) (k attrs)))))]
   res <- (w/local #(merge %1 {:parent-path path}) m)
   {:keys [e-render-info]} <- w/ask
   let [make-event-from-target
@@ -150,8 +152,16 @@
                       (let [res
                             (-> #(let [handler
                                        (fn [dom-event]
+                                         (doseq [k mutable-keys]
+                                           (when (nil? (aget el (str "__mayu_procd_" (name k))))
+                                             (aset el
+                                                   (str "__mayu_procd_" (name k))
+                                                   (aget el (name k)))))
                                          (aset dom-event "__mayu_src" el)
-                                         (%1 dom-event))]
+                                         (%1 dom-event)
+                                         (doseq [k mutable-keys]
+                                           (aset el
+                                                 (str "__mayu_procd_" (name k)) nil)))]
                                    (->> opts
                                         (merge {:capture true})
                                         to-js

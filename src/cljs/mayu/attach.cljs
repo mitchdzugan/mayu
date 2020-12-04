@@ -81,7 +81,7 @@
         last (aget target "__mayu_last")
         set? (aget target "__mayu_set?")
         buffered (or (aget target "__mayu_buffered_input") (atom a/queue))]
-    (when (and last (= elm target) path (not set?) (empty? @buffered))
+    #_(when (and last (= elm target) path (not set?) (empty? @buffered))
       (aset target "value" last))))
 
 (defn add-after-input [prev curr]
